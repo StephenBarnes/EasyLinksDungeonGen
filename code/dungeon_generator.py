@@ -1260,7 +1260,15 @@ class DungeonGenerator:
                         allowed_overlap_tiles=intersection_tiles,
                     )
                     if placement is None:
+                        print("Failed to place four-way junction room. Will print out grid and indicate the intended position of room.")
+                        print(requirements)
+                        self.draw_to_grid()
+                        # Mark the junction.
+                        for x, y in intersection_tiles:
+                            self.grid[y][x] = "*"
+                        self.print_grid()
                         raise RuntimeError("Unable to place a four-way junction room with available templates.")
+
 
                     placed_room, port_mapping = placement
                     component_id = self._merge_components(
@@ -1698,7 +1706,7 @@ class DungeonGenerator:
     def draw_to_grid(self, draw_macrogrid: bool = False) -> None:
         """Renders the placed rooms and overlays all door ports."""
         self._clear_grid()
-        # First fill rooms with a character so they are easy to distinguish.
+        # Fill rooms with a character so they are easy to distinguish.
         for room in self.placed_rooms:
             room_char = random.choice('OX/LNMW123456789')
             x, y, w, h = room.get_bounds()

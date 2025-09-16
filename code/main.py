@@ -183,15 +183,21 @@ def build_default_room_templates() -> list[RoomTemplate]:
 
 def main() -> None:
     if RANDOM_SEED is not None:
+        print(f"Using random seed {RANDOM_SEED}")
         random.seed(RANDOM_SEED)
+    else:
+        # Pick a random seed randomly and print it, so we can reproduce bugs by setting RANDOM_SEED for the next run.
+        seed = random.randint(0, 1000000)
+        print(f"Using random seed {seed}")
+        random.seed(seed)
 
     room_templates = build_default_room_templates()
     generator = DungeonGenerator(
-        width=120,
+        width=50,
         height=50,
         room_templates=room_templates,
         direct_link_counts_probs={0: 0.65, 1: 0.2, 2: 0.1, 3: 0.05},
-        num_rooms_to_place=35,
+        num_rooms_to_place=8,
         min_room_separation=1,
     )
 
