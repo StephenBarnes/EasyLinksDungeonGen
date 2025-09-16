@@ -678,21 +678,30 @@ class DungeonGenerator:
             assert current_axis is not None
             grouped.append((current_axis, current_tiles))
 
-        trimmed_groups = list(grouped)
-        while trimmed_groups and any(tile_inside(tile) for tile in trimmed_groups[-1][1]):
-            trimmed_groups.pop()
+        if not grouped:
+            return None
+
+        start_idx = 0
+        end_idx = len(grouped)
+        while start_idx < end_idx and any(tile_inside(tile) for tile in grouped[start_idx][1]):
+            start_idx += 1
+        while end_idx > start_idx and any(tile_inside(tile) for tile in grouped[end_idx - 1][1]):
+            end_idx -= 1
+
+        trimmed_groups = grouped[start_idx:end_idx]
 
         if not trimmed_groups:
             return None
-        if len(trimmed_groups) == len(grouped):
+        if start_idx == 0 and end_idx == len(grouped):
             return geometry
 
         trimmed_tiles = [tile for _, tiles in trimmed_groups for tile in tiles]
+        new_start_axis = trimmed_groups[0][0]
         new_end_axis = trimmed_groups[-1][0] + step
         return CorridorGeometry(
             tiles=tuple(trimmed_tiles),
             axis_index=axis_index,
-            port_axis_values=(start_axis, new_end_axis),
+            port_axis_values=(new_start_axis, new_end_axis),
             cross_coords=geometry.cross_coords,
         )
 
@@ -793,6 +802,39 @@ class DungeonGenerator:
                     return candidate, mapping, geometry_overrides
 
         return None
+
+    def _validate_room_corridor_clearance(self, room_index: int) -> None:
+        room = self.placed_rooms[room_index]
+        rx, ry, rw, rh = room.get_bounds()
+        overlaps: List[Tuple[Tuple[int, int], List[int]]] = []
+        for ty in range(ry, ry + rh):
+            for tx in range(rx, rx + rw):
+                tile = (tx, ty)
+                corridors = self.corridor_tile_index.get(tile)
+                if corridors:
+                    overlaps.append((tile, list(corridors)))
+        if overlaps:
+            print(
+                f"ERROR: room index {room_index} ({room.template.name}) overlaps corridor tiles:"
+            )
+            for tile, corridor_indices in overlaps:
+                print(f"    tile {tile} -> corridors {corridor_indices}")
+            reported: Set[int] = set()
+            for _, corridor_indices in overlaps:
+                for corridor_idx in corridor_indices:
+                    if corridor_idx in reported:
+                        continue
+                    reported.add(corridor_idx)
+                    corridor = self.corridors[corridor_idx]
+                    geometry = corridor.geometry
+                    print(
+                        "    corridor"
+                        f" {corridor_idx}: axis_index={geometry.axis_index},"
+                        f" port_axis_values={geometry.port_axis_values},"
+                        f" cross_coords={geometry.cross_coords},"
+                        f" endpoints=({corridor.room_a_index}, {corridor.port_a_index}) ->"
+                        f" ({corridor.room_b_index}, {corridor.port_b_index})"
+                    )
 
     def _split_existing_corridor_geometries(
         self, corridor: Corridor, junction_tiles: Iterable[Tuple[int, int]]
@@ -1405,7 +1447,8 @@ class DungeonGenerator:
                         req_idx = requirement_indices.get(source)
                         if req_idx is None:
                             continue
-                        existing_assignments[source] = (requirements[req_idx], port_mapping[req_idx])
+                        end_key = "a" if source.endswith("_a") else "b"
+                        existing_assignments[end_key] = (requirements[req_idx], port_mapping[req_idx])
                         self.placed_rooms[junction_room_index].connected_port_indices.add(port_mapping[req_idx])
 
                     self._apply_existing_corridor_segments(
@@ -1621,7 +1664,8 @@ class DungeonGenerator:
                 req_idx = requirement_indices.get(key)
                 if req_idx is None:
                     continue
-                existing_assignments[key] = (requirements[req_idx], port_mapping[req_idx])
+                end_key = "a" if key.endswith("_a") else "b"
+                existing_assignments[end_key] = (requirements[req_idx], port_mapping[req_idx])
                 self.placed_rooms[junction_room_index].connected_port_indices.add(port_mapping[req_idx])
 
             linked_indices = self._apply_existing_corridor_segments(
@@ -1636,6 +1680,8 @@ class DungeonGenerator:
             for idx in linked_indices:
                 self.room_corridor_links.add((room_idx, idx))
                 existing_room_corridor_pairs.add((room_idx, idx))
+
+            self._validate_room_corridor_clearance(junction_room_index)
 
             created += 1
             junction_rooms_created += 1
