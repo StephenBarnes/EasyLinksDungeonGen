@@ -193,11 +193,11 @@ def main() -> None:
 
     room_templates = build_default_room_templates()
     generator = DungeonGenerator(
-        width=50,
+        width=150,
         height=50,
         room_templates=room_templates,
         direct_link_counts_probs={0: 0.65, 1: 0.2, 2: 0.1, 3: 0.05},
-        num_rooms_to_place=10,
+        num_rooms_to_place=30,
         min_room_separation=1,
     )
 

@@ -5,7 +5,8 @@ from __future__ import annotations
 import math
 import random
 import itertools
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from dungeon_constants import (
@@ -605,14 +606,23 @@ class DungeonGenerator:
         self,
         room: PlacedRoom,
         allowed_tiles: Set[Tuple[int, int]],
-    ) -> bool:
+        allowed_corridors: Set[int],
+    ) -> Tuple[bool, Dict[int, Set[Tuple[int, int]]]]:
         rx, ry, rw, rh = room.get_bounds()
+        overlaps_by_corridor: Dict[int, Set[Tuple[int, int]]] = defaultdict(set)
         for ty in range(ry, ry + rh):
             for tx in range(rx, rx + rw):
                 tile = (tx, ty)
-                if tile in self.corridor_tiles and tile not in allowed_tiles:
-                    return True
-        return False
+                if tile not in self.corridor_tiles:
+                    continue
+                owners = self.corridor_tile_index.get(tile, [])
+                if tile not in allowed_tiles:
+                    if not owners or any(owner not in allowed_corridors for owner in owners):
+                        return True, {}
+                for owner in owners:
+                    if owner in allowed_corridors:
+                        overlaps_by_corridor[owner].add(tile)
+        return False, {corridor: set(tiles) for corridor, tiles in overlaps_by_corridor.items()}
 
     @staticmethod
     def _world_port_tiles_for_width(port: WorldPort, width: int) -> Tuple[Tuple[int, int], ...]:
@@ -635,12 +645,64 @@ class DungeonGenerator:
         end_x = start_x + width - 1
         return tuple((x, y) for x in range(start_x, end_x + 1))
 
+    def _trim_geometry_for_room(
+        self,
+        geometry: CorridorGeometry,
+        room: PlacedRoom,
+    ) -> Optional[CorridorGeometry]:
+        axis_index = geometry.axis_index
+        if axis_index is None:
+            return geometry
+
+        start_axis, end_axis = geometry.port_axis_values
+        step = 1 if end_axis > start_axis else -1
+        rx, ry, rw, rh = room.get_bounds()
+
+        def tile_inside(tile: Tuple[int, int]) -> bool:
+            tx, ty = tile
+            return rx <= tx < rx + rw and ry <= ty < ry + rh
+
+        grouped: List[Tuple[int, List[Tuple[int, int]]]] = []
+        current_axis: Optional[int] = None
+        current_tiles: List[Tuple[int, int]] = []
+        for tile in geometry.tiles:
+            axis_value = tile[axis_index]
+            if current_axis is None or axis_value != current_axis:
+                if current_tiles:
+                    assert current_axis is not None
+                    grouped.append((current_axis, current_tiles))
+                current_axis = axis_value
+                current_tiles = []
+            current_tiles.append(tile)
+        if current_tiles:
+            assert current_axis is not None
+            grouped.append((current_axis, current_tiles))
+
+        trimmed_groups = list(grouped)
+        while trimmed_groups and any(tile_inside(tile) for tile in trimmed_groups[-1][1]):
+            trimmed_groups.pop()
+
+        if not trimmed_groups:
+            return None
+        if len(trimmed_groups) == len(grouped):
+            return geometry
+
+        trimmed_tiles = [tile for _, tiles in trimmed_groups for tile in tiles]
+        new_end_axis = trimmed_groups[-1][0] + step
+        return CorridorGeometry(
+            tiles=tuple(trimmed_tiles),
+            axis_index=axis_index,
+            port_axis_values=(start_axis, new_end_axis),
+            cross_coords=geometry.cross_coords,
+        )
+
     def _attempt_place_special_room(
         self,
         required_ports: List[PortRequirement],
         templates: List[RoomTemplate],
         allowed_overlap_tiles: Set[Tuple[int, int]],
-    ) -> Optional[Tuple[PlacedRoom, Dict[int, int]]]:
+        allowed_overlap_corridors: Set[int],
+    ) -> Optional[Tuple[PlacedRoom, Dict[int, int], Dict[int, CorridorGeometry]]]:
         if not required_ports:
             return None
         template_candidates = list(templates)
@@ -694,7 +756,12 @@ class DungeonGenerator:
                     candidate = PlacedRoom(template, translation[0], translation[1], rotation)
                     if not self._is_valid_placement(candidate):
                         continue
-                    if self._room_overlaps_disallowed_corridor_tiles(candidate, allowed_overlap_tiles):
+                    overlaps_blocked, _ = self._room_overlaps_disallowed_corridor_tiles(
+                        candidate,
+                        allowed_overlap_tiles,
+                        allowed_overlap_corridors,
+                    )
+                    if overlaps_blocked:
                         continue
 
                     world_ports = candidate.get_world_ports()
@@ -709,7 +776,21 @@ class DungeonGenerator:
                     if not ports_match:
                         continue
 
-                    return candidate, mapping
+                    geometry_overrides: Dict[int, CorridorGeometry] = {}
+                    for req_idx, requirement in enumerate(required_ports):
+                        geometry = requirement.geometry
+                        if geometry is None:
+                            continue
+                        trimmed = self._trim_geometry_for_room(geometry, candidate)
+                        if trimmed is None:
+                            ports_match = False
+                            break
+                        if trimmed is not geometry:
+                            geometry_overrides[req_idx] = trimmed
+                    if not ports_match:
+                        continue
+
+                    return candidate, mapping, geometry_overrides
 
         return None
 
@@ -1270,6 +1351,7 @@ class DungeonGenerator:
                         requirements,
                         self.four_way_room_templates,
                         allowed_overlap_tiles=intersection_tiles,
+                        allowed_overlap_corridors={existing_idx},
                     )
                     if placement is None:
                         print("Failed to place four-way junction room. Will print out grid and indicate the intended position of room.")
@@ -1282,7 +1364,12 @@ class DungeonGenerator:
                         raise RuntimeError("Unable to place a four-way junction room with available templates.")
 
 
-                    placed_room, port_mapping = placement
+                    placed_room, port_mapping, geometry_overrides = placement
+                    if geometry_overrides:
+                        for req_idx, geometry_override in geometry_overrides.items():
+                            requirements[req_idx] = replace(
+                                requirements[req_idx], geometry=geometry_override
+                            )
                     component_id = self._merge_components(
                         self.placed_rooms[room_a_idx].component_id,
                         self.placed_rooms[room_b_idx].component_id,
@@ -1480,6 +1567,7 @@ class DungeonGenerator:
                 requirements,
                 self.t_junction_room_templates,
                 allowed_overlap_tiles=set(junction_tiles),
+                allowed_overlap_corridors={target_corridor_idx},
             )
             if placement is None:
                 print("Failed to place T-junction room. Will print out grid and indicate the intended position of room.")
@@ -1493,7 +1581,12 @@ class DungeonGenerator:
                 self.print_grid()
                 raise RuntimeError("Unable to place a T-junction room with available templates.")
 
-            placed_room, port_mapping = placement
+            placed_room, port_mapping, geometry_overrides = placement
+            if geometry_overrides:
+                for req_idx, geometry_override in geometry_overrides.items():
+                    requirements[req_idx] = replace(
+                        requirements[req_idx], geometry=geometry_override
+                    )
             component_id = self._merge_components(
                 self.placed_rooms[room_idx].component_id,
                 target_corridor.component_id,
