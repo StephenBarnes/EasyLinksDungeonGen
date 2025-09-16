@@ -561,6 +561,7 @@ class DungeonGenerator:
         port_index: Optional[int] = None,
         corridor_idx: Optional[int] = None,
         corridor_end: Optional[str] = None,
+        junction_tiles: Optional[Iterable[Tuple[int, int]]] = None,
     ) -> Optional[PortRequirement]:
         if segment is None:
             return None
@@ -574,7 +575,14 @@ class DungeonGenerator:
             direction = (-sign, 0)
         else:
             direction = (0, -sign)
-        inside_tiles = tuple((tx - direction[0], ty - direction[1]) for tx, ty in outside_tiles)
+        junction_set: Optional[Set[Tuple[int, int]]] = None
+        if junction_tiles is not None:
+            junction_set = set(junction_tiles)
+
+        if junction_set is not None and all(tile in junction_set for tile in outside_tiles):
+            inside_tiles = outside_tiles
+        else:
+            inside_tiles = tuple((tx - direction[0], ty - direction[1]) for tx, ty in outside_tiles)
         width = len(outside_tiles)
         if width != expected_width:
             return None
@@ -1217,6 +1225,7 @@ class DungeonGenerator:
                             expected_width=width,
                             room_index=room_a_idx,
                             port_index=port_a_idx,
+                            junction_tiles=intersection_tiles,
                         )
                     ):
                         continue
@@ -1228,6 +1237,7 @@ class DungeonGenerator:
                             expected_width=width,
                             room_index=room_b_idx,
                             port_index=port_b_idx,
+                            junction_tiles=intersection_tiles,
                         )
                     ):
                         continue
@@ -1239,6 +1249,7 @@ class DungeonGenerator:
                             expected_width=existing_corridor.width,
                             corridor_idx=existing_idx,
                             corridor_end="a",
+                            junction_tiles=intersection_tiles,
                         )
                     ):
                         continue
@@ -1250,6 +1261,7 @@ class DungeonGenerator:
                             expected_width=existing_corridor.width,
                             corridor_idx=existing_idx,
                             corridor_end="b",
+                            junction_tiles=intersection_tiles,
                         )
                     ):
                         continue
@@ -1426,6 +1438,7 @@ class DungeonGenerator:
                     expected_width=width,
                     room_index=room_idx,
                     port_index=port_idx,
+                    junction_tiles=junction_tiles,
                 )
             ):
                 continue
@@ -1445,6 +1458,7 @@ class DungeonGenerator:
                     expected_width=target_corridor.width,
                     corridor_idx=target_corridor_idx,
                     corridor_end="a",
+                    junction_tiles=junction_tiles,
                 )
             ):
                 continue
@@ -1457,6 +1471,7 @@ class DungeonGenerator:
                     expected_width=target_corridor.width,
                     corridor_idx=target_corridor_idx,
                     corridor_end="b",
+                    junction_tiles=junction_tiles,
                 )
             ):
                 continue
