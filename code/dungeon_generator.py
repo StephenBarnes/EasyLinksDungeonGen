@@ -14,6 +14,7 @@ from dungeon_constants import (
 )
 from dungeon_geometry import rotate_direction
 from dungeon_models import (
+    RoomKind,
     Corridor,
     CorridorGeometry,
     FourWayIntersection,
@@ -40,7 +41,13 @@ class DungeonGenerator:
     ) -> None:
         self.width = width
         self.height = height
+
         self.room_templates = list(room_templates)
+        self.standalone_room_templates = list(rt for rt in room_templates if RoomKind.STANDALONE in rt.kinds)
+        self.bend_room_templates = list(rt for rt in room_templates if RoomKind.BEND in rt.kinds)
+        self.t_junction_room_templates = list(rt for rt in room_templates if RoomKind.T_JUNCTION in rt.kinds)
+        self.four_way_room_templates = list(rt for rt in room_templates if RoomKind.FOUR_WAY in rt.kinds)
+
         self.num_rooms_to_place = num_rooms_to_place
         # Minimum empty tiles between room bounding boxes, unless they connect at ports.
         self.min_room_separation = min_room_separation
@@ -378,7 +385,7 @@ class DungeonGenerator:
             # Candidate attempt loop
             for _ in range(MAX_CONNECTED_PLACEMENT_ATTEMPTS):
                 template = random.choices(
-                    self.room_templates, weights=[rt.direct_weight for rt in self.room_templates]
+                    self.standalone_room_templates, weights=[rt.direct_weight for rt in self.standalone_room_templates]
                 )[0]
                 rotation = self._random_rotation()
                 temp_room = PlacedRoom(template, 0, 0, rotation)
@@ -1407,16 +1414,16 @@ class DungeonGenerator:
                 placement_category, side_proximities = self._describe_macro_position(macro_x, macro_y)
 
                 if placement_category == "middle":
-                    template_weights = [rt.root_weight_middle for rt in self.room_templates]
+                    template_weights = [rt.root_weight_middle for rt in self.standalone_room_templates]
                 elif placement_category == "edge":
-                    template_weights = [rt.root_weight_edge for rt in self.room_templates]
+                    template_weights = [rt.root_weight_edge for rt in self.standalone_room_templates]
                 else:
-                    template_weights = [rt.root_weight_intermediate for rt in self.room_templates]
+                    template_weights = [rt.root_weight_intermediate for rt in self.standalone_room_templates]
 
                 if not any(weight > 0 for weight in template_weights):
-                    template_weights = [1.0 for _ in self.room_templates]
+                    template_weights = [1.0 for _ in self.standalone_room_templates]
 
-                template = random.choices(self.room_templates, weights=template_weights)[0]
+                template = random.choices(self.standalone_room_templates, weights=template_weights)[0]
                 rotation = self._select_root_rotation(template, placement_category, side_proximities)
                 candidate_room = self._build_root_room_candidate(template, rotation, macro_x, macro_y)
                 if self._is_valid_placement(candidate_room):

@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import FrozenSet, List, Optional, Tuple
 
 from dungeon_constants import VALID_ROTATIONS
 from dungeon_geometry import port_tiles_from_world_pos, rotate_direction, rotate_point
+
+
+class RoomKind(Enum):
+    """Specifies the ways that a given RoomTemplate can be used."""
+    STANDALONE = 0 # Created by step 1, either placed as a root or created directly linked to existing room.
+    T_JUNCTION = 1 # Connects 2 corridors/rooms in line with each other, plus a third corridor/room perpendicular.
+    BEND = 2 # Connects to 2 passages/rooms at right angles.
+    FOUR_WAY = 3 # Connects to 4 passages, or poss
 
 
 @dataclass
@@ -48,6 +57,7 @@ class RoomTemplate:
     name: str
     size: Tuple[int, int]
     ports: List[PortTemplate]
+    kinds: FrozenSet[RoomKind]
     root_weight_middle: float = 1.0  # Weight when placing room near the dungeon center.
     root_weight_edge: float = 1.0  # Weight when placing room near the dungeon outskirts.
     root_weight_intermediate: float = 1.0  # Weight when placement is neither central nor edge.
@@ -57,6 +67,7 @@ class RoomTemplate:
     def __post_init__(self) -> None:
         width, height = self.size
         self.size = (int(width), int(height))
+        self.kinds = frozenset(self.kinds)
 
         if self.preferred_center_facing_dir is not None:
             dx, dy = self.preferred_center_facing_dir

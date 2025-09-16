@@ -11,7 +11,7 @@ There are various algorithms for dungeon gen; I've tried a BSP (binary space par
 - Room modules can be rotated, which also moves the ports.
 - Rooms are linked together either directly (port-to-port) or via passages. Passages can't overlap with rooms.
 - We generally want to avoid zigzagging passages. Ideally, passages should be straight, or should meet at T-junctions or 4-way junctions. We could have passages that turn 90 degrees, but that's best avoided. We especially want to avoid passages that have multiple 90-degree joints close to each other.
-- Passages can be of different widths, generally a 2-8 tiles. Each room's ports can allow only some subset of passage sizes. We want to avoid "adapters" that convert passages from one width to another, since they look awkward. Let's stick with even widths for passages, so they can be centered on ports.
+- Passages can be of different widths, generally 2-8 tiles. Each room's ports can allow only some subset of passage sizes. We want to avoid "adapters" that convert passages from one width to another, since they look awkward. Let's stick with even widths for passages, so they can be centered on ports.
 - We want parameters we can tune for things like the distribution of room modules, and the density of rooms in a region.
 - We want the dungeon to have loops; some rooms should have 3 or more passages coming out from them. Others should be dead ends.
 - All rooms should be reachable from all other rooms.
