@@ -735,10 +735,10 @@ class DungeonGenerator:
             f"Easylink step 2: created {created} straight corridors (with {len(self.four_way_junctions)} tiles in 4-way junctions)."
         )
 
-    def create_easy_t_junctions(self, fill_probability: float) -> int:
-        """Implements Step 3: link ports to corridors with straight passages."""
+    def create_easy_t_junctions(self, fill_probability: float, step_num: int) -> int:
+        """Implements Step 3, 5, and 7: link ports to corridors with straight passages."""
         if not self.corridors:
-            print("Easylink step 3: skipped - no existing corridors to join.")
+            print(f"Easylink step {step_num}: skipped - no existing corridors to join.")
             return 0
 
         tile_to_room = self._build_room_tile_lookup()
@@ -827,7 +827,7 @@ class DungeonGenerator:
             existing_room_corridor_pairs.add((room_idx, target_corridor_idx))
 
         print(
-            f"Easylink step 3: created {created} corridor-to-corridor links "
+            f"Easylink step {step_num}: created {created} corridor-to-corridor links "
             f"(tracking {len(self.t_junction_tiles)} T-junction tiles)."
         )
         return created

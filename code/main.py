@@ -90,18 +90,25 @@ def main() -> None:
         min_room_separation=1,
     )
 
+    # Step 1: place rooms, some with direct links
     generator.place_rooms()
+
+    # Step 2: create direct corridors
     generator.create_easy_links()
 
+    # Step 3: create T-junctions with direct corridors
     num_created = 1
     while num_created > 0:
-        num_created = generator.create_easy_t_junctions(fill_probability=1)
+        num_created = generator.create_easy_t_junctions(fill_probability=1, step_num=3)
+
+    # Step 4: create bent links between rooms
+    num_created = generator.create_bent_room_links()
+
+    # Step 5: create T-junctions with the new corridors, if any
+    while num_created > 0:
+        num_created = generator.create_easy_t_junctions(fill_probability=1, step_num=5)
 
     # Debug: check number of components
-    print(f"Component count: {len(generator.get_component_summary())}")
-
-    generator.create_bent_room_links()
-
     print(f"Component count: {len(generator.get_component_summary())}")
 
     generator.draw_to_grid(draw_macrogrid=False)
