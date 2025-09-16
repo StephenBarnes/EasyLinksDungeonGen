@@ -66,10 +66,13 @@ class RoomTemplate:
     allow_door_overlaps: bool = False
 
     def __post_init__(self) -> None:
+        self.kinds = frozenset(self.kinds)
+        self.validate()
         width, height = self.size
         self.size = (int(width), int(height))
-        self.kinds = frozenset(self.kinds)
-
+    
+    def validate(self):
+        """Run several validations to check that our room templates and their ports obey constraints."""
         if self.size[0] <= 0 or self.size[1] <= 0:
             raise ValueError(f"Room {self.name} must have positive non-zero dimensions")
 
@@ -87,7 +90,13 @@ class RoomTemplate:
         if not self.kinds:
             raise ValueError(f"Room {self.name} must specify at least one RoomKind")
 
-        # Validate per-port geometry and collect occupancy footprints at max width.
+        self.validate_ports()
+        
+        if RoomKind.STANDALONE in self.kinds:
+            self.validate_macrogrid_alignment()
+
+    def validate_ports(self):
+        """Validate per-port geometry and collect occupancy footprints at max width."""
         occupied_tiles: dict[tuple[int, int], int] = {}
         width, height = self.size
         eps = 1e-6
@@ -171,62 +180,63 @@ class RoomTemplate:
                     raise ValueError(
                         f"Room {self.name} port {port_index} width {max_width} exceeds room bounds"
                     )
-                if not self.allow_door_overlaps and (tile_x, tile_y) in occupied_tiles:
+                if (not self.allow_door_overlaps) and (tile_x, tile_y) in occupied_tiles:
                     raise ValueError(
                         f"Room {self.name} ports {occupied_tiles[(tile_x, tile_y)]} and {port_index} overlap at tile {(tile_x, tile_y)} when at max width"
                     )
                 occupied_tiles[(tile_x, tile_y)] = port_index
 
-        if RoomKind.STANDALONE in self.kinds:
-            for rotation in VALID_ROTATIONS:
-                rotated_ports = []
-                for port in self.ports:
-                    rp_x, rp_y = rotate_point(port.pos[0], port.pos[1], width, height, rotation)
-                    rd_x, rd_y = rotate_direction(port.direction[0], port.direction[1], rotation)
-                    rotated_ports.append(((rp_x, rp_y), (rd_x, rd_y)))
+    def validate_macrogrid_alignment(self):
+        width, height = self.size
+        eps = 1e-6
+        for rotation in VALID_ROTATIONS:
+            rotated_ports = []
+            for port in self.ports:
+                rp_x, rp_y = rotate_point(port.pos[0], port.pos[1], width, height, rotation)
+                rd_x, rd_y = rotate_direction(port.direction[0], port.direction[1], rotation)
+                rotated_ports.append(((rp_x, rp_y), (rd_x, rd_y)))
 
-                ref_offset_x = None
-                ref_offset_y = None
-                for (rp_x, rp_y), direction in rotated_ports:
-                    try:
-                        offset_x, offset_y = DOOR_MACRO_ALIGNMENT_OFFSETS[direction]
-                    except KeyError as exc:
-                        raise ValueError(
-                            f"Room {self.name} has unsupported port direction {direction}"
-                        ) from exc
+            ref_offset_x = None
+            ref_offset_y = None
+            for (rp_x, rp_y), direction in rotated_ports:
+                try:
+                    offset_x, offset_y = DOOR_MACRO_ALIGNMENT_OFFSETS[direction]
+                except KeyError as exc:
+                    raise ValueError(
+                        f"Room {self.name} has unsupported port direction {direction}"
+                    ) from exc
 
-                    # Each port must be able to anchor the room with an integer translation.
-                    shift_x = offset_x - rp_x
-                    shift_y = offset_y - rp_y
-                    if not math.isclose(shift_x, round(shift_x), abs_tol=eps):
+                # Each port must be able to anchor the room with an integer translation.
+                shift_x = offset_x - rp_x
+                shift_y = offset_y - rp_y
+                if not math.isclose(shift_x, round(shift_x), abs_tol=eps):
+                    raise ValueError(
+                        f"Room {self.name} rotation {rotation} port cannot align to macro-grid with integer X shift"
+                    )
+                if not math.isclose(shift_y, round(shift_y), abs_tol=eps):
+                    raise ValueError(
+                        f"Room {self.name} rotation {rotation} port cannot align to macro-grid with integer Y shift"
+                    )
+
+                value_x = rp_x - offset_x
+                value_y = rp_y - offset_y
+
+                if ref_offset_x is None:
+                    ref_offset_x = value_x
+                    ref_offset_y = value_y
+                else:
+                    delta_x = value_x - ref_offset_x
+                    delta_y = value_y - ref_offset_y
+                    normalized_x = delta_x / float(MACRO_GRID_SIZE)
+                    normalized_y = delta_y / float(MACRO_GRID_SIZE)
+                    if not math.isclose(normalized_x, round(normalized_x), abs_tol=eps):
                         raise ValueError(
-                            f"Room {self.name} rotation {rotation} port cannot align to macro-grid with integer X shift"
+                            f"Room {self.name} rotation {rotation} ports misaligned on macro-grid (x)"
                         )
-                    if not math.isclose(shift_y, round(shift_y), abs_tol=eps):
+                    if not math.isclose(normalized_y, round(normalized_y), abs_tol=eps):
                         raise ValueError(
-                            f"Room {self.name} rotation {rotation} port cannot align to macro-grid with integer Y shift"
+                            f"Room {self.name} rotation {rotation} ports misaligned on macro-grid (y)"
                         )
-
-                    value_x = rp_x - offset_x
-                    value_y = rp_y - offset_y
-
-                    if ref_offset_x is None:
-                        ref_offset_x = value_x
-                        ref_offset_y = value_y
-                    else:
-                        delta_x = value_x - ref_offset_x
-                        delta_y = value_y - ref_offset_y
-                        normalized_x = delta_x / float(MACRO_GRID_SIZE)
-                        normalized_y = delta_y / float(MACRO_GRID_SIZE)
-                        if not math.isclose(normalized_x, round(normalized_x), abs_tol=eps):
-                            raise ValueError(
-                                f"Room {self.name} rotation {rotation} ports misaligned on macro-grid (x)"
-                            )
-                        if not math.isclose(normalized_y, round(normalized_y), abs_tol=eps):
-                            raise ValueError(
-                                f"Room {self.name} rotation {rotation} ports misaligned on macro-grid (y)"
-                            )
-
 
 @dataclass(frozen=True)
 class WorldPort:
