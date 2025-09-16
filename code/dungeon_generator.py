@@ -11,6 +11,7 @@ from dungeon_constants import (
     MACRO_GRID_SIZE,
     MAX_CONNECTED_PLACEMENT_ATTEMPTS,
     VALID_ROTATIONS,
+    MAX_CONSECUTIVE_LIMIT_FAILURES,
 )
 from dungeon_geometry import rotate_direction
 from dungeon_models import (
@@ -1402,9 +1403,13 @@ class DungeonGenerator:
         """Implements Step 1: Randomly place rooms with macro-grid aligned ports."""
         print(f"Attempting to place {self.num_rooms_to_place} rooms...")
         placed_count = 0
+        consecutive_limit_exceeded = 0
 
         for root_room_index in range(self.num_rooms_to_place):
             if placed_count >= self.num_rooms_to_place:
+                break
+            if consecutive_limit_exceeded >= MAX_CONSECUTIVE_LIMIT_FAILURES:
+                print(f"Exceeded attempt limit {MAX_CONSECUTIVE_LIMIT_FAILURES} consecutive times, aborting further placement.")
                 break
 
             placed_room: Optional[PlacedRoom] = None
@@ -1431,6 +1436,7 @@ class DungeonGenerator:
                     break
 
             if placed_room is None:
+                consecutive_limit_exceeded += 1
                 print(f"Exceeded attempt limit when placing root room number {root_room_index}.")
                 continue
 
@@ -1438,6 +1444,7 @@ class DungeonGenerator:
             self._register_room(placed_room, component_id)
             placed_count += 1
             placed_count += self._spawn_direct_links_recursive(placed_room)
+            consecutive_limit_exceeded = 0
 
             print(f"Placed root room number {root_room_index} after {attempt} failed attempts.")
             print(f"Placed root room is {placed_room.template.name} at {(placed_room.x, placed_room.y)}")

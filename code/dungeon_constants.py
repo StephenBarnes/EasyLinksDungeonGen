@@ -17,3 +17,4 @@ DOOR_MACRO_ALIGNMENT_OFFSETS = {
 
 VALID_ROTATIONS = (0, 90, 180, 270)
 MAX_CONNECTED_PLACEMENT_ATTEMPTS = 40
+MAX_CONSECUTIVE_LIMIT_FAILURES = 5 # We abort adding new rooms after we've reached max placement attempts too many times in a row.
