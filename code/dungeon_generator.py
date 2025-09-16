@@ -606,6 +606,27 @@ class DungeonGenerator:
                     return True
         return False
 
+    @staticmethod
+    def _world_port_tiles_for_width(port: WorldPort, width: int) -> Tuple[Tuple[int, int], ...]:
+        if width <= 0 or width % 2 != 0:
+            raise ValueError("Port width must be a positive even number")
+
+        tile_a, tile_b = port.tiles
+        if tile_a[0] == tile_b[0]:
+            x = tile_a[0]
+            y0, y1 = sorted((tile_a[1], tile_b[1]))
+            extent = (width // 2) - 1
+            start_y = y0 - extent
+            end_y = start_y + width - 1
+            return tuple((x, y) for y in range(start_y, end_y + 1))
+
+        y = tile_a[1]
+        x0, x1 = sorted((tile_a[0], tile_b[0]))
+        extent = (width // 2) - 1
+        start_x = x0 - extent
+        end_x = start_x + width - 1
+        return tuple((x, y) for x in range(start_x, end_x + 1))
+
     def _attempt_place_special_room(
         self,
         required_ports: List[PortRequirement],
@@ -673,7 +694,8 @@ class DungeonGenerator:
                     for req_idx, port_idx in mapping.items():
                         requirement = required_ports[req_idx]
                         world_port = world_ports[port_idx]
-                        if tuple(sorted(world_port.tiles)) != requirement.inside_tiles:
+                        candidate_tiles = self._world_port_tiles_for_width(world_port, requirement.width)
+                        if candidate_tiles != requirement.inside_tiles:
                             ports_match = False
                             break
                     if not ports_match:
@@ -1438,6 +1460,7 @@ class DungeonGenerator:
             )
             if placement is None:
                 print("Failed to place T-junction room. Will print out grid and indicate the intended position of room.")
+                print(requirements)
                 self.draw_to_grid()
                 # Mark the junction.
                 for x, y in junction_tiles:
