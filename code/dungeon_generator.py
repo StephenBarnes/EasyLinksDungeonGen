@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 import random
+import itertools
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 from dungeon_constants import (
@@ -14,16 +16,24 @@ from dungeon_constants import (
     MAX_CONSECUTIVE_LIMIT_FAILURES,
 )
 from dungeon_geometry import rotate_direction
-from dungeon_models import (
-    RoomKind,
-    Corridor,
-    CorridorGeometry,
-    FourWayIntersection,
-    PlacedRoom,
-    RoomTemplate,
-    TJunction,
-    WorldPort,
-)
+from dungeon_models import RoomKind, Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
+
+
+@dataclass(frozen=True)
+class PortRequirement:
+    """Specifies the desired doorway placement for a special junction room."""
+
+    center: Tuple[float, float]
+    direction: Tuple[int, int]
+    width: int
+    inside_tiles: Tuple[Tuple[int, int], ...]
+    outside_tiles: Tuple[Tuple[int, int], ...]
+    source: str
+    geometry: Optional[CorridorGeometry] = None
+    room_index: Optional[int] = None
+    port_index: Optional[int] = None
+    corridor_idx: Optional[int] = None
+    corridor_end: Optional[str] = None
 
 
 class DungeonGenerator:
@@ -58,12 +68,7 @@ class DungeonGenerator:
         self.corridor_components: List[int] = []
         self.corridor_tiles: Set[Tuple[int, int]] = set()
         self.corridor_tile_index: Dict[Tuple[int, int], List[int]] = {}
-        self.t_junctions: List[TJunction] = []
-        self.t_junction_components: List[int] = []
-        self.t_junction_tiles: Set[Tuple[int, int]] = set()
-        self.four_way_intersections: List[FourWayIntersection] = []
-        self.four_way_components: List[int] = []
-        self.four_way_tiles: Set[Tuple[int, int]] = set()
+        self.room_corridor_links: Set[Tuple[int, int]] = set()
         self.grid = [[" " for _ in range(width)] for _ in range(height)]
         # Probability distribution for number of immediate direct links per room
         # Example: {0: 0.4, 1: 0.3, 2: 0.3}
@@ -134,24 +139,6 @@ class DungeonGenerator:
         self._add_corridor_tiles(new_index)
         return new_index
 
-    def _register_t_junction(self, junction: TJunction, component_id: int) -> int:
-        junction.component_id = component_id
-        self.t_junctions.append(junction)
-        self.t_junction_components.append(component_id)
-        idx = len(self.t_junctions) - 1
-        for tile in junction.tiles:
-            self.t_junction_tiles.add(tile)
-        return idx
-
-    def _register_four_way(self, intersection: FourWayIntersection, component_id: int) -> int:
-        intersection.component_id = component_id
-        self.four_way_intersections.append(intersection)
-        self.four_way_components.append(component_id)
-        idx = len(self.four_way_intersections) - 1
-        for tile in intersection.tiles:
-            self.four_way_tiles.add(tile)
-        return idx
-
     def _remove_corridor_tiles(self, corridor_idx: int) -> None:
         corridor = self.corridors[corridor_idx]
         for tile in corridor.geometry.tiles:
@@ -187,16 +174,6 @@ class DungeonGenerator:
                 self.corridor_components[idx] = target
                 self.corridors[idx].component_id = target
 
-        for idx, comp in enumerate(self.t_junction_components):
-            if comp in valid_ids:
-                self.t_junction_components[idx] = target
-                self.t_junctions[idx].component_id = target
-
-        for idx, comp in enumerate(self.four_way_components):
-            if comp in valid_ids:
-                self.four_way_components[idx] = target
-                self.four_way_intersections[idx].component_id = target
-
         return target
 
     def get_component_summary(self) -> Dict[int, Dict[str, List[int]]]:
@@ -209,8 +186,6 @@ class DungeonGenerator:
                 {
                     "rooms": [],
                     "corridors": [],
-                    "t_junctions": [],
-                    "four_way_intersections": [],
                 },
             )
 
@@ -221,14 +196,6 @@ class DungeonGenerator:
         for idx, component_id in enumerate(self.corridor_components):
             comp_summary = ensure_entry(component_id)
             comp_summary["corridors"].append(idx)
-
-        for idx, component_id in enumerate(self.t_junction_components):
-            comp_summary = ensure_entry(component_id)
-            comp_summary["t_junctions"].append(idx)
-
-        for idx, component_id in enumerate(self.four_way_components):
-            comp_summary = ensure_entry(component_id)
-            comp_summary["four_way_intersections"].append(idx)
 
         return summary
 
@@ -489,120 +456,6 @@ class DungeonGenerator:
             raise ValueError("Unable to infer cross coordinates for corridor geometry")
         return tuple(sorted(cross_set))
 
-    def _corridor_endpoint_info(
-        self, corridor: Corridor, endpoint: str
-    ) -> Tuple[Optional[int], Optional[int], Optional[Tuple[str, int]]]:
-        if endpoint == "a":
-            return corridor.room_a_index, corridor.port_a_index, corridor.joint_a
-        return corridor.room_b_index, corridor.port_b_index, corridor.joint_b
-
-    def _set_corridor_endpoint_info(
-        self,
-        corridor: Corridor,
-        endpoint: str,
-        room_index: Optional[int],
-        port_index: Optional[int],
-        joint: Optional[Tuple[str, int]],
-    ) -> None:
-        if endpoint == "a":
-            corridor.room_a_index = room_index
-            corridor.port_a_index = port_index
-            corridor.joint_a = joint
-        else:
-            corridor.room_b_index = room_index
-            corridor.port_b_index = port_index
-            corridor.joint_b = joint
-
-    def _split_corridor_for_junction(
-        self,
-        corridor_idx: int,
-        junction_axis: int,
-        joint_ref: Tuple[str, int],
-    ) -> List[int]:
-        """Split a straight corridor at a junction and return involved corridor indices."""
-        corridor = self.corridors[corridor_idx]
-        geometry = corridor.geometry
-
-        axis_index = geometry.axis_index
-        if axis_index is None:
-            return [corridor_idx]
-
-        start_axis, end_axis = geometry.port_axis_values
-        cross_coords = self._corridor_cross_from_geometry(geometry, axis_index)
-
-        conn_a = self._corridor_endpoint_info(corridor, "a")
-        conn_b = self._corridor_endpoint_info(corridor, "b")
-
-        # Remove existing tiles before reassigning geometries.
-        self._remove_corridor_tiles(corridor_idx)
-
-        segment_a = self._build_segment_geometry(axis_index, start_axis, junction_axis, cross_coords)
-        segment_b = self._build_segment_geometry(axis_index, end_axis, junction_axis, cross_coords)
-
-        new_indices: List[int] = []
-
-        if segment_a is not None:
-            corridor.geometry = segment_a
-            self._set_corridor_endpoint_info(
-                corridor,
-                "a",
-                conn_a[0],
-                conn_a[1],
-                conn_a[2],
-            )
-            self._set_corridor_endpoint_info(corridor, "b", None, None, joint_ref)
-            self._add_corridor_tiles(corridor_idx)
-            new_indices.append(corridor_idx)
-        else:
-            # No tiles remain on the A side; treat the existing corridor as the B side segment.
-            if segment_b is None:
-                return [corridor_idx]
-            corridor.geometry = segment_b
-            self._set_corridor_endpoint_info(
-                corridor,
-                "a",
-                conn_b[0],
-                conn_b[1],
-                conn_b[2],
-            )
-            self._set_corridor_endpoint_info(corridor, "b", None, None, joint_ref)
-            self._add_corridor_tiles(corridor_idx)
-            new_indices.append(corridor_idx)
-            return new_indices
-
-        if segment_b is not None:
-            new_corridor = Corridor(
-                room_a_index=conn_b[0],
-                port_a_index=conn_b[1],
-                room_b_index=None,
-                port_b_index=None,
-                width=corridor.width,
-                geometry=segment_b,
-                component_id=corridor.component_id,
-                joint_a=conn_b[2],
-                joint_b=joint_ref,
-            )
-            new_idx = self._register_corridor(new_corridor, corridor.component_id)
-            new_indices.append(new_idx)
-        else:
-            # Endpoint B is directly at the junction.
-            self._set_corridor_endpoint_info(corridor, "b", None, None, joint_ref)
-
-        return new_indices
-
-    def _replace_joint_reference(
-        self,
-        corridor_indices: List[int],
-        old_ref: Tuple[str, int],
-        new_ref: Tuple[str, int],
-    ) -> None:
-        for idx in corridor_indices:
-            corridor = self.corridors[idx]
-            if corridor.joint_a == old_ref:
-                corridor.joint_a = new_ref
-            if corridor.joint_b == old_ref:
-                corridor.joint_b = new_ref
-
     def _build_corridor_geometry(
         self,
         room_index_a: int,
@@ -678,6 +531,227 @@ class DungeonGenerator:
             port_axis_values=(exit_a, exit_b),
             cross_coords=tuple(cross_coords),
         )
+
+    @staticmethod
+    def _port_center_from_tiles(inside_tiles: Tuple[Tuple[int, int], ...]) -> Tuple[float, float]:
+        xs = {tile[0] for tile in inside_tiles}
+        ys = {tile[1] for tile in inside_tiles}
+        if len(xs) == 1:
+            x = float(next(iter(xs)))
+            min_y = min(ys)
+            max_y = max(ys)
+            y = (min_y + max_y) / 2.0
+            return x, y
+        if len(ys) == 1:
+            y = float(next(iter(ys)))
+            min_x = min(xs)
+            max_x = max(xs)
+            x = (min_x + max_x) / 2.0
+            return x, y
+        raise ValueError("Port tiles must form a straight line")
+
+    def _build_port_requirement_from_segment(
+        self,
+        segment: Optional[CorridorGeometry],
+        axis_index: int,
+        source: str,
+        *,
+        expected_width: int,
+        room_index: Optional[int] = None,
+        port_index: Optional[int] = None,
+        corridor_idx: Optional[int] = None,
+        corridor_end: Optional[str] = None,
+    ) -> Optional[PortRequirement]:
+        if segment is None:
+            return None
+        start_axis, end_axis = segment.port_axis_values
+        sign = 1 if end_axis > start_axis else -1
+        boundary_axis = end_axis - sign
+        outside_tiles = tuple(tile for tile in segment.tiles if tile[axis_index] == boundary_axis)
+        if not outside_tiles:
+            return None
+        if axis_index == 0:
+            direction = (-sign, 0)
+        else:
+            direction = (0, -sign)
+        inside_tiles = tuple((tx - direction[0], ty - direction[1]) for tx, ty in outside_tiles)
+        width = len(outside_tiles)
+        if width != expected_width:
+            return None
+        center = self._port_center_from_tiles(inside_tiles)
+        return PortRequirement(
+            center=center,
+            direction=direction,
+            width=width,
+            inside_tiles=tuple(sorted(inside_tiles)),
+            outside_tiles=tuple(sorted(outside_tiles)),
+            source=source,
+            geometry=segment,
+            room_index=room_index,
+            port_index=port_index,
+            corridor_idx=corridor_idx,
+            corridor_end=corridor_end,
+        )
+
+    def _room_overlaps_disallowed_corridor_tiles(
+        self,
+        room: PlacedRoom,
+        allowed_tiles: Set[Tuple[int, int]],
+    ) -> bool:
+        rx, ry, rw, rh = room.get_bounds()
+        for ty in range(ry, ry + rh):
+            for tx in range(rx, rx + rw):
+                tile = (tx, ty)
+                if tile in self.corridor_tiles and tile not in allowed_tiles:
+                    return True
+        return False
+
+    def _attempt_place_special_room(
+        self,
+        required_ports: List[PortRequirement],
+        templates: List[RoomTemplate],
+        allowed_overlap_tiles: Set[Tuple[int, int]],
+    ) -> Optional[Tuple[PlacedRoom, Dict[int, int]]]:
+        if not required_ports:
+            return None
+        template_candidates = list(templates)
+        random.shuffle(template_candidates)
+
+        for template in template_candidates:
+            for rotation in VALID_ROTATIONS:
+                base_room = PlacedRoom(template, 0, 0, rotation)
+                rotated_ports = base_room.get_world_ports()
+                if len(rotated_ports) < len(required_ports):
+                    continue
+
+                port_indices = list(range(len(rotated_ports)))
+                for selected_ports in itertools.permutations(port_indices, len(required_ports)):
+                    translation: Optional[Tuple[int, int]] = None
+                    mapping: Dict[int, int] = {}
+                    valid = True
+                    for req_idx, port_idx in enumerate(selected_ports):
+                        requirement = required_ports[req_idx]
+                        rotated_port = rotated_ports[port_idx]
+                        if rotated_port.direction != requirement.direction:
+                            valid = False
+                            break
+                        if requirement.width not in rotated_port.widths:
+                            valid = False
+                            break
+
+                        dx = requirement.center[0] - rotated_port.pos[0]
+                        dy = requirement.center[1] - rotated_port.pos[1]
+                        if translation is None:
+                            if not (
+                                math.isclose(dx, round(dx), abs_tol=1e-6)
+                                and math.isclose(dy, round(dy), abs_tol=1e-6)
+                            ):
+                                valid = False
+                                break
+                            translation = (int(round(dx)), int(round(dy)))
+                        else:
+                            tx, ty = translation
+                            if not (
+                                math.isclose(rotated_port.pos[0] + tx, requirement.center[0], abs_tol=1e-6)
+                                and math.isclose(rotated_port.pos[1] + ty, requirement.center[1], abs_tol=1e-6)
+                            ):
+                                valid = False
+                                break
+                        mapping[req_idx] = port_idx
+
+                    if not valid or translation is None:
+                        continue
+
+                    candidate = PlacedRoom(template, translation[0], translation[1], rotation)
+                    if not self._is_valid_placement(candidate):
+                        continue
+                    if self._room_overlaps_disallowed_corridor_tiles(candidate, allowed_overlap_tiles):
+                        continue
+
+                    world_ports = candidate.get_world_ports()
+                    ports_match = True
+                    for req_idx, port_idx in mapping.items():
+                        requirement = required_ports[req_idx]
+                        world_port = world_ports[port_idx]
+                        if tuple(sorted(world_port.tiles)) != requirement.inside_tiles:
+                            ports_match = False
+                            break
+                    if not ports_match:
+                        continue
+
+                    return candidate, mapping
+
+        return None
+
+    def _split_existing_corridor_geometries(
+        self, corridor: Corridor, junction_axis: int
+    ) -> Tuple[Optional[CorridorGeometry], Optional[CorridorGeometry]]:
+        geometry = corridor.geometry
+        axis_index = geometry.axis_index
+        if axis_index is None:
+            return None, None
+        cross_coords = self._corridor_cross_from_geometry(geometry, axis_index)
+        start_axis, end_axis = geometry.port_axis_values
+        seg_to_a = self._build_segment_geometry(axis_index, start_axis, junction_axis, cross_coords)
+        seg_to_b = self._build_segment_geometry(axis_index, end_axis, junction_axis, cross_coords)
+        return seg_to_a, seg_to_b
+
+    def _apply_existing_corridor_segments(
+        self,
+        corridor_idx: int,
+        assignments: Dict[str, Tuple[PortRequirement, int]],
+        junction_room_index: int,
+        component_id: int,
+    ) -> List[int]:
+        corridor = self.corridors[corridor_idx]
+        connected_indices: List[int] = []
+
+        original_a = (corridor.room_a_index, corridor.port_a_index)
+        original_b = (corridor.room_b_index, corridor.port_b_index)
+
+        segments: List[Tuple[str, Corridor]] = []
+        for end, original in (("a", original_a), ("b", original_b)):
+            assignment = assignments.get(end)
+            if assignment is None:
+                continue
+            requirement, junction_port_idx = assignment
+            if requirement.geometry is None:
+                continue
+            other_room, other_port = original
+            segment_corridor = Corridor(
+                room_a_index=other_room,
+                port_a_index=other_port,
+                room_b_index=junction_room_index,
+                port_b_index=junction_port_idx,
+                width=corridor.width,
+                geometry=requirement.geometry,
+                component_id=component_id,
+            )
+            segments.append((end, segment_corridor))
+
+        if not segments:
+            return connected_indices
+
+        # Remove the old geometry before replacing it.
+        self._remove_corridor_tiles(corridor_idx)
+
+        primary_end, primary_segment = segments[0]
+        corridor.room_a_index = primary_segment.room_a_index
+        corridor.port_a_index = primary_segment.port_a_index
+        corridor.room_b_index = primary_segment.room_b_index
+        corridor.port_b_index = primary_segment.port_b_index
+        corridor.width = primary_segment.width
+        corridor.geometry = primary_segment.geometry
+        corridor.component_id = component_id
+        self.corridor_components[corridor_idx] = component_id
+        self._add_corridor_tiles(corridor_idx)
+        connected_indices.append(corridor_idx)
+
+        for _, segment in segments[1:]:
+            new_idx = self._register_corridor(segment, component_id)
+            connected_indices.append(new_idx)
+
+        return connected_indices
 
     def _build_t_junction_geometry(
         self,
@@ -973,6 +1047,7 @@ class DungeonGenerator:
             for corridor in self.corridors
             if corridor.room_b_index is not None
         } # type: ignore
+        intersection_rooms_created = 0
 
         for i, (room_a_idx, port_a_idx, world_port_a) in enumerate(available_ports):
             key_a = (room_a_idx, port_a_idx)
@@ -1022,8 +1097,6 @@ class DungeonGenerator:
                         overlap_map.setdefault(existing_idx, []).append(tile)
 
                 if overlap_map:
-                    # Handle the simple case where the new corridor crosses exactly one existing corridor.
-                    # More complex overlap scenarios (multiple intersections at once) are skipped for now.
                     if len(overlap_map) != 1:
                         continue
 
@@ -1034,13 +1107,6 @@ class DungeonGenerator:
                     if existing_corridor.geometry.axis_index == geometry.axis_index:
                         continue
 
-                    component_id = self._merge_components(
-                        self.placed_rooms[room_a_idx].component_id,
-                        self.placed_rooms[room_b_idx].component_id,
-                        existing_corridor.component_id,
-                    )
-
-                    pending_ref = ("four_way", -1)
                     intersection_axis_new = overlap_tiles[0][geometry.axis_index]
                     cross_coords_new = geometry.cross_coords or self._corridor_cross_from_geometry(
                         geometry, geometry.axis_index
@@ -1060,54 +1126,133 @@ class DungeonGenerator:
                     if seg_a is None or seg_b is None:
                         continue
 
-                    corridor_a = Corridor(
-                        room_a_index=room_a_idx,
-                        port_a_index=port_a_idx,
-                        room_b_index=None,
-                        port_b_index=None,
-                        width=width,
-                        geometry=seg_a,
-                        component_id=component_id,
-                        joint_b=pending_ref,
+                    existing_axis_index = existing_corridor.geometry.axis_index
+                    if existing_axis_index is None:
+                        continue
+
+                    existing_axis_value = overlap_tiles[0][existing_axis_index]
+                    seg_existing_a, seg_existing_b = self._split_existing_corridor_geometries(
+                        existing_corridor,
+                        existing_axis_value,
                     )
-                    corridor_b = Corridor(
-                        room_a_index=room_b_idx,
-                        port_a_index=port_b_idx,
-                        room_b_index=None,
-                        port_b_index=None,
-                        width=width,
-                        geometry=seg_b,
-                        component_id=component_id,
-                        joint_b=pending_ref,
+                    if seg_existing_a is None or seg_existing_b is None:
+                        continue
+
+                    requirements: List[PortRequirement] = []
+                    requirement_indices: Dict[str, int] = {}
+
+                    def add_requirement(req: Optional[PortRequirement]) -> bool:
+                        if req is None:
+                            return False
+                        requirement_indices[req.source] = len(requirements)
+                        requirements.append(req)
+                        return True
+
+                    if not add_requirement(
+                        self._build_port_requirement_from_segment(
+                            seg_a,
+                            geometry.axis_index,
+                            "new_a",
+                            expected_width=width,
+                            room_index=room_a_idx,
+                            port_index=port_a_idx,
+                        )
+                    ):
+                        continue
+                    if not add_requirement(
+                        self._build_port_requirement_from_segment(
+                            seg_b,
+                            geometry.axis_index,
+                            "new_b",
+                            expected_width=width,
+                            room_index=room_b_idx,
+                            port_index=port_b_idx,
+                        )
+                    ):
+                        continue
+                    if not add_requirement(
+                        self._build_port_requirement_from_segment(
+                            seg_existing_a,
+                            existing_axis_index,
+                            "existing_a",
+                            expected_width=existing_corridor.width,
+                            corridor_idx=existing_idx,
+                            corridor_end="a",
+                        )
+                    ):
+                        continue
+                    if not add_requirement(
+                        self._build_port_requirement_from_segment(
+                            seg_existing_b,
+                            existing_axis_index,
+                            "existing_b",
+                            expected_width=existing_corridor.width,
+                            corridor_idx=existing_idx,
+                            corridor_end="b",
+                        )
+                    ):
+                        continue
+
+                    placement = self._attempt_place_special_room(
+                        requirements,
+                        self.four_way_room_templates,
+                        allowed_overlap_tiles=set(overlap_tiles),
+                    )
+                    if placement is None:
+                        raise RuntimeError("Unable to place a four-way junction room with available templates.")
+
+                    placed_room, port_mapping = placement
+                    component_id = self._merge_components(
+                        self.placed_rooms[room_a_idx].component_id,
+                        self.placed_rooms[room_b_idx].component_id,
+                        existing_corridor.component_id,
                     )
 
-                    idx_a = self._register_corridor(corridor_a, component_id)
-                    idx_b = self._register_corridor(corridor_b, component_id)
+                    junction_room_index = len(self.placed_rooms)
+                    self._register_room(placed_room, component_id)
+
+                    for source in ("new_a", "new_b"):
+                        req_idx = requirement_indices[source]
+                        requirement = requirements[req_idx]
+                        port_idx = port_mapping[req_idx]
+                        geometry_segment = requirement.geometry
+                        if geometry_segment is None:
+                            continue
+                        corridor = Corridor(
+                            room_a_index=requirement.room_index,
+                            port_a_index=requirement.port_index,
+                            room_b_index=junction_room_index,
+                            port_b_index=port_idx,
+                            width=requirement.width,
+                            geometry=geometry_segment,
+                            component_id=component_id,
+                        )
+                        self._register_corridor(corridor, component_id)
+                        if requirement.room_index is not None and requirement.port_index is not None:
+                            self.placed_rooms[requirement.room_index].connected_port_indices.add(requirement.port_index)
+                        self.placed_rooms[junction_room_index].connected_port_indices.add(port_idx)
+
+                    existing_assignments: Dict[str, Tuple[PortRequirement, int]] = {}
+                    for source in ("existing_a", "existing_b"):
+                        req_idx = requirement_indices.get(source)
+                        if req_idx is None:
+                            continue
+                        existing_assignments[source] = (requirements[req_idx], port_mapping[req_idx])
+                        self.placed_rooms[junction_room_index].connected_port_indices.add(port_mapping[req_idx])
+
+                    self._apply_existing_corridor_segments(
+                        existing_idx,
+                        existing_assignments,
+                        junction_room_index,
+                        component_id,
+                    )
+
                     self.placed_rooms[room_a_idx].connected_port_indices.add(port_a_idx)
                     self.placed_rooms[room_b_idx].connected_port_indices.add(port_b_idx)
                     used_ports.add(key_a)
                     used_ports.add(key_b)
                     connected_room_pairs.add(room_pair)
-
-                    existing_axis_value = overlap_tiles[0][existing_corridor.geometry.axis_index]
-                    split_indices = self._split_corridor_for_junction(
-                        existing_idx,
-                        existing_axis_value,
-                        pending_ref,
-                    )
-
-                    intersection_tiles = tuple(sorted({tile for tile in overlap_tiles}))
-                    connected_indices = [idx_a, idx_b] + split_indices
-
-                    intersection = FourWayIntersection(
-                        tiles=intersection_tiles,
-                        width=width,
-                        connected_corridor_indices=tuple(sorted(set(connected_indices))), # type: ignore
-                        component_id=component_id,
-                    )
-                    intersection_idx = self._register_four_way(intersection, component_id)
-                    actual_ref = ("four_way", intersection_idx)
-                    self._replace_joint_reference(connected_indices, pending_ref, actual_ref)
+                    intersection_rooms_created += 1
 
                     break
 
@@ -1136,10 +1281,9 @@ class DungeonGenerator:
                     break
 
         created = len(self.corridors) - initial_corridor_count
-        total_four_way = sum(len(intersection.tiles) for intersection in self.four_way_intersections)
         print(
             f"Easylink step {step_num}: created {created} straight corridors "
-            f"(tracking {len(self.four_way_intersections)} 4-way intersections covering {total_four_way} tiles)."
+            f"and placed {intersection_rooms_created} four-way rooms."
         )
         return created
 
@@ -1152,23 +1296,13 @@ class DungeonGenerator:
         tile_to_room = self._build_room_tile_lookup()
         room_world_ports = [room.get_world_ports() for room in self.placed_rooms]
 
-        def build_existing_pairs() -> Set[Tuple[int, int]]:
-            pairs: Set[Tuple[int, int]] = set()
-            for junction in self.t_junctions:
-                for corridor_idx in junction.connected_corridor_indices:
-                    corridor = self.corridors[corridor_idx]
-                    if corridor.room_a_index is not None:
-                        pairs.add((corridor.room_a_index, corridor_idx))
-                    if corridor.room_b_index is not None:
-                        pairs.add((corridor.room_b_index, corridor_idx))
-            return pairs
-
-        existing_room_corridor_pairs = build_existing_pairs()
+        existing_room_corridor_pairs = set(self.room_corridor_links)
 
         available_ports = self._list_available_ports(room_world_ports)
         random.shuffle(available_ports)
 
         created = 0
+        junction_rooms_created = 0
         for room_idx, port_idx, world_port in available_ports:
             tile_to_corridors = self._build_corridor_tile_lookup()
 
@@ -1199,58 +1333,131 @@ class DungeonGenerator:
             width, geometry, target_corridor_idx, junction_tiles = random.choice(viable_options)
 
             target_corridor = self.corridors[target_corridor_idx]
+            if geometry.axis_index is None:
+                continue
+            existing_axis_index = target_corridor.geometry.axis_index
+            if existing_axis_index is None:
+                continue
+
+            requirements: List[PortRequirement] = []
+            requirement_indices: Dict[str, int] = {}
+
+            def add_requirement(req: Optional[PortRequirement]) -> bool:
+                if req is None:
+                    return False
+                requirement_indices[req.source] = len(requirements)
+                requirements.append(req)
+                return True
+
+            if not add_requirement(
+                self._build_port_requirement_from_segment(
+                    geometry,
+                    geometry.axis_index,
+                    "new_branch",
+                    expected_width=width,
+                    room_index=room_idx,
+                    port_index=port_idx,
+                )
+            ):
+                continue
+
+            junction_axis = junction_tiles[0][existing_axis_index]
+            seg_existing_a, seg_existing_b = self._split_existing_corridor_geometries(
+                target_corridor,
+                junction_axis,
+            )
+            if seg_existing_a is None or seg_existing_b is None:
+                continue
+
+            if not add_requirement(
+                self._build_port_requirement_from_segment(
+                    seg_existing_a,
+                    existing_axis_index,
+                    "existing_a",
+                    expected_width=target_corridor.width,
+                    corridor_idx=target_corridor_idx,
+                    corridor_end="a",
+                )
+            ):
+                continue
+
+            if not add_requirement(
+                self._build_port_requirement_from_segment(
+                    seg_existing_b,
+                    existing_axis_index,
+                    "existing_b",
+                    expected_width=target_corridor.width,
+                    corridor_idx=target_corridor_idx,
+                    corridor_end="b",
+                )
+            ):
+                continue
+
+            placement = self._attempt_place_special_room(
+                requirements,
+                self.t_junction_room_templates,
+                allowed_overlap_tiles=set(junction_tiles),
+            )
+            if placement is None:
+                raise RuntimeError("Unable to place a T-junction room with available templates.")
+
+            placed_room, port_mapping = placement
             component_id = self._merge_components(
                 self.placed_rooms[room_idx].component_id,
                 target_corridor.component_id,
             )
 
-            pending_ref = ("t_junction", -1)
+            junction_room_index = len(self.placed_rooms)
+            self._register_room(placed_room, component_id)
+
+            branch_idx = requirement_indices["new_branch"]
+            branch_requirement = requirements[branch_idx]
+            branch_geometry = branch_requirement.geometry
+            if branch_geometry is None:
+                continue
+            branch_port_idx = port_mapping[branch_idx]
             new_corridor = Corridor(
                 room_a_index=room_idx,
                 port_a_index=port_idx,
-                room_b_index=None,
-                port_b_index=None,
+                room_b_index=junction_room_index,
+                port_b_index=branch_port_idx,
                 width=width,
-                geometry=geometry,
+                geometry=branch_geometry,
                 component_id=component_id,
-                joint_a=None,
-                joint_b=pending_ref,
             )
-
             new_corridor_idx = self._register_corridor(new_corridor, component_id)
             self.placed_rooms[room_idx].connected_port_indices.add(port_idx)
+            self.placed_rooms[junction_room_index].connected_port_indices.add(branch_port_idx)
+            self.room_corridor_links.add((room_idx, new_corridor_idx))
+            existing_room_corridor_pairs.add((room_idx, new_corridor_idx))
 
-            axis_index = self.corridors[target_corridor_idx].geometry.axis_index
-            if axis_index is None:
-                continue
-            junction_axis = junction_tiles[0][axis_index]
+            existing_assignments: Dict[str, Tuple[PortRequirement, int]] = {}
+            for key in ("existing_a", "existing_b"):
+                req_idx = requirement_indices.get(key)
+                if req_idx is None:
+                    continue
+                existing_assignments[key] = (requirements[req_idx], port_mapping[req_idx])
+                self.placed_rooms[junction_room_index].connected_port_indices.add(port_mapping[req_idx])
 
-            linked_indices = self._split_corridor_for_junction(
+            linked_indices = self._apply_existing_corridor_segments(
                 target_corridor_idx,
-                junction_axis,
-                pending_ref,
+                existing_assignments,
+                junction_room_index,
+                component_id,
             )
-
-            connected_indices = [new_corridor_idx] + linked_indices
-
-            junction = TJunction(
-                tiles=junction_tiles,
-                width=width,
-                connected_corridor_indices=tuple(sorted(set(connected_indices))), # type: ignore
-                component_id=component_id,
-            )
-            junction_idx = self._register_t_junction(junction, component_id)
-            actual_ref = ("t_junction", junction_idx)
-
-            self._replace_joint_reference(connected_indices, pending_ref, actual_ref)
 
             existing_room_corridor_pairs.add((room_idx, target_corridor_idx))
+            self.room_corridor_links.add((room_idx, target_corridor_idx))
+            for idx in linked_indices:
+                self.room_corridor_links.add((room_idx, idx))
+                existing_room_corridor_pairs.add((room_idx, idx))
 
             created += 1
+            junction_rooms_created += 1
 
         print(
             f"Easylink step {step_num}: created {created} corridor-to-corridor links "
-            f"(tracking {len(self.t_junction_tiles)} T-junction tiles)."
+            f"and placed {junction_rooms_created} T-junction rooms."
         )
         return created
 
@@ -1433,12 +1640,6 @@ class DungeonGenerator:
         for corridor in self.corridors:
             for tx, ty in corridor.geometry.tiles:
                 self.grid[ty][tx] = '░'
-        for junction in self.t_junctions:
-            for tx, ty in junction.tiles:
-                self.grid[ty][tx] = '.'
-        for intersection in self.four_way_intersections:
-            for tx, ty in intersection.tiles:
-                self.grid[ty][tx] = '.'
         # Then overlay ports
         for room in self.placed_rooms:
             for port in room.get_world_ports():

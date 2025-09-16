@@ -269,28 +269,6 @@ class Corridor:
     width: int
     geometry: CorridorGeometry
     component_id: int = -1
-    joint_a: Optional[Tuple[str, int]] = None
-    joint_b: Optional[Tuple[str, int]] = None
-
-
-@dataclass
-class TJunction:
-    """Represents a three-way corridor intersection."""
-
-    tiles: Tuple[Tuple[int, int], ...]
-    width: int
-    connected_corridor_indices: Tuple[int, int, int] = field(default_factory=tuple)
-    component_id: int = -1
-
-
-@dataclass
-class FourWayIntersection:
-    """Represents a four-way corridor intersection."""
-
-    tiles: Tuple[Tuple[int, int], ...]
-    width: int
-    connected_corridor_indices: Tuple[int, int, int, int] = field(default_factory=tuple)
-    component_id: int = -1
 
 
 @dataclass
