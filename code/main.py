@@ -25,7 +25,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
             root_weight_edge=0.4,
             root_weight_intermediate=1.0,
             direct_weight=1.5,
-            kinds=frozenset((RoomKind.STANDALONE,)),
+            kinds=frozenset((RoomKind.STANDALONE, RoomKind.FOUR_WAY)),
         ),
         RoomTemplate(
             name="room_8x10_5doors",
@@ -151,7 +151,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(1, 0.5), direction=(1, 0), widths=frozenset((2,))),
                 PortTemplate(pos=(0, 0.5), direction=(-1, 0), widths=frozenset((2,))),
             ],
-            kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
+            kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY, RoomKind.BEND)),
             allow_door_overlaps=True,
         ),
         RoomTemplate(
@@ -163,7 +163,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(1, 1.5), direction=(1, 0), widths=frozenset((4,))),
                 PortTemplate(pos=(0, 1.5), direction=(-1, 0), widths=frozenset((4,))),
             ],
-            kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
+            kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY, RoomKind.BEND)),
             allow_door_overlaps=True,
         ),
         RoomTemplate(
@@ -175,7 +175,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0, 1.5), direction=(-1, 0), widths=frozenset((4,))),
                 PortTemplate(pos=(3, 1.5), direction=(1, 0), widths=frozenset((4,))),
             ],
-            kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
+            kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY, RoomKind.BEND)),
             allow_door_overlaps=True,
         ),
     ]
@@ -187,11 +187,11 @@ def main() -> None:
 
     room_templates = build_default_room_templates()
     generator = DungeonGenerator(
-        width=100,
-        height=50,
+        width=150,
+        height=55,
         room_templates=room_templates,
         direct_link_counts_probs={0: 0.65, 1: 0.2, 2: 0.1, 3: 0.05},
-        num_rooms_to_place=15,
+        num_rooms_to_place=25,
         min_room_separation=1,
     )
 
@@ -199,12 +199,13 @@ def main() -> None:
     generator.place_rooms()
 
     # Step 2: create direct corridors
-    generator.create_easy_links()
+    generator.create_easy_links(step_num=2)
 
     # Step 3: create T-junctions with direct corridors
     num_created = 1
     while num_created > 0:
         num_created = generator.create_easy_t_junctions(fill_probability=1, step_num=3)
+        num_created += generator.create_easy_links(step_num=3)
 
     # Print dungeon at this stage, to help check changes.
     generator.draw_to_grid(draw_macrogrid=False)
@@ -213,9 +214,10 @@ def main() -> None:
     # Step 4: create bent links between rooms
     num_created = generator.create_bent_room_links()
 
-    # Step 5: create T-junctions with the new corridors, if any
+    # Step 5: re-run steps 2 and 3, if we created new rooms or corridors.
     while num_created > 0:
-        num_created = generator.create_easy_t_junctions(fill_probability=1, step_num=5)
+        num_created = generator.create_easy_links(step_num=5)
+        num_created += generator.create_easy_t_junctions(fill_probability=1, step_num=5)
 
     # Debug: check number of components
     print(f"Component count: {len(generator.get_component_summary())}")

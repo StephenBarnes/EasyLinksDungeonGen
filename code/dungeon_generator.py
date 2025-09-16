@@ -956,11 +956,10 @@ class DungeonGenerator:
 
         return None
 
-    def create_easy_links(self) -> None:
+    def create_easy_links(self, step_num) -> int:
         """Implements Step 2: connect facing ports with straight corridors."""
         if not self.placed_rooms:
-            print("ERROR: no placed rooms.")
-            return
+            raise ValueError("ERROR: no placed rooms.")
 
         initial_corridor_count = len(self.corridors)
         tile_to_room = self._build_room_tile_lookup()
@@ -1139,9 +1138,10 @@ class DungeonGenerator:
         created = len(self.corridors) - initial_corridor_count
         total_four_way = sum(len(intersection.tiles) for intersection in self.four_way_intersections)
         print(
-            f"Easylink step 2: created {created} straight corridors "
+            f"Easylink step {step_num}: created {created} straight corridors "
             f"(tracking {len(self.four_way_intersections)} 4-way intersections covering {total_four_way} tiles)."
         )
+        return created
 
     def create_easy_t_junctions(self, fill_probability: float, step_num: int) -> int:
         """Implements Step 3, 5, and 7: link ports to corridors with straight passages."""
@@ -1414,8 +1414,8 @@ class DungeonGenerator:
             placed_count += self._spawn_direct_links_recursive(placed_room)
             consecutive_limit_exceeded = 0
 
-            print(f"Placed root room number {root_room_index} after {attempt} failed attempts.")
-            print(f"Placed root room is {placed_room.template.name} at {(placed_room.x, placed_room.y)}")
+            #print(f"Placed root room number {root_room_index} after {attempt} failed attempts.")
+            #print(f"Placed root room is {placed_room.template.name} at {(placed_room.x, placed_room.y)}")
 
         print(f"Successfully placed {placed_count} rooms.")
 
