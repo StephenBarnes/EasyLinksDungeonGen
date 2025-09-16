@@ -7,11 +7,10 @@ import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass, replace
-from typing import Dict, Iterable, List, Optional, Set, Tuple, TYPE_CHECKING
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from dungeon_constants import VALID_ROTATIONS
 from dungeon_models import Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
-from dungeon_mixin_contract import DungeonContract
 
 
 @dataclass(frozen=True)
@@ -31,8 +30,22 @@ class PortRequirement:
     corridor_end: Optional[str] = None
 
 
-class CorridorBuilderMixin(DungeonContract):
+class CorridorBuilderMixin:
     """Implements corridor carving and the algorithm steps that use it."""
+
+    width: int
+    height: int
+    placed_rooms: List[PlacedRoom]
+    corridors: List[Corridor]
+    corridor_tiles: Set[Tuple[int, int]]
+    corridor_tile_index: Dict[Tuple[int, int], List[int]]
+    room_components: List[int]
+    corridor_components: List[int]
+    room_corridor_links: Set[Tuple[int, int]]
+    t_junction_room_templates: List[RoomTemplate]
+    four_way_room_templates: List[RoomTemplate]
+    bend_room_templates: List[RoomTemplate]
+    grid: List[List[str]]
 
     def _build_room_tile_lookup(self) -> Dict[Tuple[int, int], int]:
         """Map each room tile to its owning room index for collision checks."""

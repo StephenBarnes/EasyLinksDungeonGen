@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Set, Tuple
 
 from dungeon_models import Corridor, PlacedRoom
-from dungeon_mixin_contract import DungeonContract
 
 
-class ComponentManagerMixin(DungeonContract):
+class ComponentManagerMixin:
     """Provides component bookkeeping utilities for `DungeonGenerator`.
 
     The concrete subclass is expected to define the following attributes:
@@ -21,6 +20,14 @@ class ComponentManagerMixin(DungeonContract):
     * `corridor_tiles`: set of tile coordinates used by corridors
     * `corridor_tile_index`: mapping of tile to corridor indices occupying it
     """
+
+    placed_rooms: List[PlacedRoom]
+    room_components: List[int]
+    corridors: List[Corridor]
+    corridor_components: List[int]
+    corridor_tiles: Set[Tuple[int, int]]
+    corridor_tile_index: Dict[Tuple[int, int], List[int]]
+    _next_component_id: int
 
     def _new_component_id(self) -> int:
         component_id = self._next_component_id
