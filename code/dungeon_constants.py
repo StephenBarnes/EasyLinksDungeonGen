@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 MACRO_GRID_SIZE = 4
-RANDOM_SEED = None  # Set to a number for reproducible behavior (for debugging); set to None to produce different dungeon on every run.
+RANDOM_SEED = 111593  # Set to a number for reproducible behavior (for debugging); set to None to produce different dungeon on every run.
 
 # Door centers must land on these macro-grid offsets per-facing direction.
 DOOR_FRAC_OFFSET = MACRO_GRID_SIZE - 0.5
