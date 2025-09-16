@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 MACRO_GRID_SIZE = 4
-RANDOM_SEED = None  # For reproducing bugs
+RANDOM_SEED = 1239  # For reproducing bugs
 
 # Door centers must land on these macro-grid offsets per-facing direction.
 DOOR_FRAC_OFFSET = MACRO_GRID_SIZE - 0.5
