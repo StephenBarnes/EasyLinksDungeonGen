@@ -1,5 +1,3 @@
-- Organize into multiple files.
-
 - Add validation for the room templates.
 	- If one of the door ports is given, check that placing that door port in a valid position on the macrogrid will also put all other door ports at valid positions on the macrogrid.
 	- Every room must have at least 1 door port.

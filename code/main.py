@@ -21,7 +21,9 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0, 3.5), direction=(-1, 0), widths=frozenset({2, 4})),
                 PortTemplate(pos=(7, 3.5), direction=(1, 0), widths=frozenset({2, 4})),
             ],
-            root_weight=1.5,
+            root_weight_middle=1.5,
+            root_weight_edge=0.4,
+            root_weight_intermediate=1.0,
             direct_weight=1.5,
         ),
         RoomTemplate(
@@ -34,7 +36,9 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(7, 1.5), direction=(1, 0), widths=frozenset({2})),
                 PortTemplate(pos=(7, 5.5), direction=(1, 0), widths=frozenset({2})),
             ],
-            root_weight=2.0,
+            root_weight_middle=2.0,
+            root_weight_edge=0.5,
+            root_weight_intermediate=1.2,
         ),
         RoomTemplate(
             name="room_8x6_2doors",
@@ -43,6 +47,9 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0, 2.5), direction=(-1, 0), widths=frozenset({2, 4})),
                 PortTemplate(pos=(7, 2.5), direction=(1, 0), widths=frozenset({2, 4})),
             ],
+            root_weight_middle=1.0,
+            root_weight_edge=1.0,
+            root_weight_intermediate=1.0,
         ),
         RoomTemplate(
             name="room_6x6_90deg",
@@ -51,6 +58,9 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0, 1.5), direction=(-1, 0), widths=frozenset({2})),
                 PortTemplate(pos=(3.5, 5), direction=(0, 1), widths=frozenset({2})),
             ],
+            root_weight_middle=0.7,
+            root_weight_edge=0.9,
+            root_weight_intermediate=1.1,
         ),
         RoomTemplate(
             name="room_6x4_deadend",
@@ -58,8 +68,10 @@ def build_default_room_templates() -> list[RoomTemplate]:
             ports=[
                 PortTemplate(pos=(2.5, 0), direction=(0, -1), widths=frozenset({2, 4})),
             ],
-            root_weight=0.25,
-            direct_weight=1.0,
+            root_weight_middle=0.2,
+            root_weight_edge=2.5,
+            root_weight_intermediate=0.5,
+            preferred_center_facing_dir=(0, -1)
         ),
     ]
 
@@ -70,11 +82,11 @@ def main() -> None:
 
     room_templates = build_default_room_templates()
     generator = DungeonGenerator(
-        width=100,
-        height=40,
+        width=140,
+        height=50,
         room_templates=room_templates,
         direct_link_counts_probs={0: 0.65, 1: 0.2, 2: 0.1, 3: 0.05},
-        num_rooms_to_place=10,
+        num_rooms_to_place=30,
         min_room_separation=1,
     )
 

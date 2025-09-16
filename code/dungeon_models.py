@@ -48,12 +48,23 @@ class RoomTemplate:
     name: str
     size: Tuple[int, int]
     ports: List[PortTemplate]
-    root_weight: float = 1.0  # Weight for random choice when choosing root room to place.
+    root_weight_middle: float = 1.0  # Weight when placing room near the dungeon center.
+    root_weight_edge: float = 1.0  # Weight when placing room near the dungeon outskirts.
+    root_weight_intermediate: float = 1.0  # Weight when placement is neither central nor edge.
     direct_weight: float = 1.0  # Weight for random choice when creating direct-linked rooms.
+    preferred_center_facing_dir: Optional[Tuple[int, int]] = None
 
     def __post_init__(self) -> None:
         width, height = self.size
         self.size = (int(width), int(height))
+
+        if self.preferred_center_facing_dir is not None:
+            dx, dy = self.preferred_center_facing_dir
+            if (dx, dy) not in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                raise ValueError(
+                    "preferred_center_facing_dir must be a cardinal direction tuple"
+                )
+            self.preferred_center_facing_dir = (int(dx), int(dy))
 
 
 @dataclass(frozen=True)

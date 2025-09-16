@@ -12,6 +12,7 @@ from dungeon_constants import (
     MAX_CONNECTED_PLACEMENT_ATTEMPTS,
     VALID_ROTATIONS,
 )
+from dungeon_geometry import rotate_direction
 from dungeon_models import Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
 
 
@@ -156,9 +157,10 @@ class DungeonGenerator:
         macro_y = random.randint(1, max_macro_y - 1) * MACRO_GRID_SIZE
         return macro_x, macro_y
 
-    def _build_root_room_candidate(self, template: RoomTemplate, rotation: int) -> PlacedRoom:
+    def _build_root_room_candidate(
+        self, template: RoomTemplate, rotation: int, macro_x: int, macro_y: int
+    ) -> PlacedRoom:
         anchor_port_index = random.randrange(len(template.ports))
-        macro_x, macro_y = self._random_macro_grid_point()
 
         rotated_room = PlacedRoom(template, 0, 0, rotation)
         rotated_ports = rotated_room.get_world_ports()
@@ -175,6 +177,66 @@ class DungeonGenerator:
         room_x = int(round(snapped_port_x - rotated_anchor_port.pos[0]))
         room_y = int(round(snapped_port_y - rotated_anchor_port.pos[1]))
         return PlacedRoom(template, room_x, room_y, rotation)
+
+    @staticmethod
+    def _categorize_side_distance(distance: float, span: int) -> str:
+        if span <= 0:
+            return "far"
+        ratio = max(0.0, min(distance / float(span), 1.0))
+        if ratio <= 0.3:
+            return "close"
+        if ratio >= 0.4:
+            return "far"
+        return "intermediate"
+
+    def _describe_macro_position(self, macro_x: int, macro_y: int) -> Tuple[str, Dict[str, str]]:
+        side_proximities = {
+            "left": self._categorize_side_distance(macro_x, self.width),
+            "right": self._categorize_side_distance(self.width - macro_x, self.width),
+            "top": self._categorize_side_distance(macro_y, self.height),
+            "bottom": self._categorize_side_distance(self.height - macro_y, self.height),
+        }
+
+        if any(value == "close" for value in side_proximities.values()):
+            proximity = "edge"
+        elif all(value == "far" for value in side_proximities.values()):
+            proximity = "middle"
+        else:
+            proximity = "intermediate"
+
+        return proximity, side_proximities
+
+    def _select_root_rotation(
+        self,
+        template: RoomTemplate,
+        placement_category: str,
+        side_proximities: Dict[str, str],
+    ) -> int:
+        preferred_dir = template.preferred_center_facing_dir
+        if placement_category != "edge" or preferred_dir is None:
+            return self._random_rotation()
+
+        inward_directions: List[Tuple[int, int]] = []
+        if side_proximities.get("left") == "close":
+            inward_directions.append((1, 0))
+        if side_proximities.get("right") == "close":
+            inward_directions.append((-1, 0))
+        if side_proximities.get("top") == "close":
+            inward_directions.append((0, 1))
+        if side_proximities.get("bottom") == "close":
+            inward_directions.append((0, -1))
+
+        if not inward_directions:
+            return self._random_rotation()
+
+        rotation_weights: List[float] = []
+        pdx, pdy = preferred_dir
+        for rotation in VALID_ROTATIONS:
+            rotated_dir = rotate_direction(pdx, pdy, rotation)
+            weight = 1.0 if rotated_dir in inward_directions else 0.0
+            rotation_weights.append(weight)
+
+        return random.choices(VALID_ROTATIONS, weights=rotation_weights)[0]
 
     def _sample_num_direct_links(self) -> int:
         """Sample n using the configured probability distribution."""
@@ -678,11 +740,22 @@ class DungeonGenerator:
             placed_room: Optional[PlacedRoom] = None
             attempt = 0
             for attempt in range(20):
-                template = random.choices(
-                    self.room_templates, weights=[rt.root_weight for rt in self.room_templates]
-                )[0]
-                rotation = self._random_rotation()
-                candidate_room = self._build_root_room_candidate(template, rotation)
+                macro_x, macro_y = self._random_macro_grid_point()
+                placement_category, side_proximities = self._describe_macro_position(macro_x, macro_y)
+
+                if placement_category == "middle":
+                    template_weights = [rt.root_weight_middle for rt in self.room_templates]
+                elif placement_category == "edge":
+                    template_weights = [rt.root_weight_edge for rt in self.room_templates]
+                else:
+                    template_weights = [rt.root_weight_intermediate for rt in self.room_templates]
+
+                if not any(weight > 0 for weight in template_weights):
+                    template_weights = [1.0 for _ in self.room_templates]
+
+                template = random.choices(self.room_templates, weights=template_weights)[0]
+                rotation = self._select_root_rotation(template, placement_category, side_proximities)
+                candidate_room = self._build_root_room_candidate(template, rotation, macro_x, macro_y)
                 if self._is_valid_placement(candidate_room):
                     placed_room = candidate_room
                     break
