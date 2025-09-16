@@ -1399,6 +1399,14 @@ class DungeonGenerator:
                 allowed_overlap_tiles=set(junction_tiles),
             )
             if placement is None:
+                print("Failed to place T-junction room. Will print out grid and indicate the intended position of room.")
+                self.draw_to_grid()
+                # Mark the junction.
+                for x, y in junction_tiles:
+                    self.grid[y][x] = "*"
+                # Mark the interior of the room we're trying to connect.
+                self.mark_room_interior_on_grid(room_idx)
+                self.print_grid()
                 raise RuntimeError("Unable to place a T-junction room with available templates.")
 
             placed_room, port_mapping = placement
@@ -1659,6 +1667,14 @@ class DungeonGenerator:
                 ):
                     continue
                 self.grid[y][x] = '░'
+
+    def mark_room_interior_on_grid(self, room_idx: int) -> None:
+        """Mark the interior of the specified room_idx with asterisks."""
+        room = self.placed_rooms[room_idx]
+        bounds = room.get_bounds()
+        for x in range(bounds[0] + 1, bounds[0] + bounds[2] - 1):
+            for y in range(bounds[1] + 1, bounds[1] + bounds[3] - 1):
+                self.grid[y][x] = "*"
 
     def print_grid(self, horizontal_sep: str = "") -> None:
         """Prints the ASCII grid to the console."""
