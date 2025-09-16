@@ -68,9 +68,9 @@ def build_default_room_templates() -> list[RoomTemplate]:
             ports=[
                 PortTemplate(pos=(2.5, 0), direction=(0, -1), widths=frozenset({2, 4})),
             ],
-            root_weight_middle=0.2,
-            root_weight_edge=2.5,
-            root_weight_intermediate=0.5,
+            root_weight_middle=0.1,
+            root_weight_edge=2,
+            root_weight_intermediate=0.3,
             preferred_center_facing_dir=(0, -1)
         ),
     ]
@@ -82,11 +82,11 @@ def main() -> None:
 
     room_templates = build_default_room_templates()
     generator = DungeonGenerator(
-        width=140,
-        height=50,
+        width=230,
+        height=60,
         room_templates=room_templates,
         direct_link_counts_probs={0: 0.65, 1: 0.2, 2: 0.1, 3: 0.05},
-        num_rooms_to_place=30,
+        num_rooms_to_place=50,
         min_room_separation=1,
     )
 
@@ -97,9 +97,11 @@ def main() -> None:
     while num_created > 0:
         num_created = generator.create_easy_t_junctions(fill_probability=1)
 
+    # Debug: check number of components
+    print(f"Component count: {len(generator.get_component_summary())}")
+
     generator.draw_to_grid(draw_macrogrid=False)
     generator.print_grid(horizontal_sep="")
-
 
 if __name__ == "__main__":
     main()
