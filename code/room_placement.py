@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import random
 from typing import Dict, List, Optional, Tuple
 
 from dungeon_constants import (
@@ -14,18 +13,12 @@ from dungeon_constants import (
 )
 from dungeon_geometry import rotate_direction
 from dungeon_models import PlacedRoom, RoomTemplate
+from dungeon_mixin_contract import DungeonContract
+import random
 
 
-class RoomPlacementMixin:
+class RoomPlacementMixin(DungeonContract):
     """Shared routines implementing the algorithm's room placement logic."""
-
-    width: int
-    height: int
-    standalone_room_templates: List[RoomTemplate]
-    min_room_separation: int
-    placed_rooms: List[PlacedRoom]
-    direct_link_counts_probs: Dict[int, float]
-    num_rooms_to_place: int
 
     def _expand_bounds(self, bounds: Tuple[int, int, int, int], margin: int) -> Tuple[int, int, int, int]:
         x, y, w, h = bounds
