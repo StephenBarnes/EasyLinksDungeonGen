@@ -82,23 +82,54 @@ class CorridorGeometry:
     """Holds the tile layout for a corridor between two ports."""
 
     tiles: Tuple[Tuple[int, int], ...]
-    axis_index: Optional[int]  # 0 for horizontal, 1 for vertical, None for bent corridors
+    axis_index: Optional[int]  # 0 for horizontal, 1 for vertical, None for joints
     port_axis_values: Tuple[int, int]
+    cross_coords: Tuple[int, ...] = ()
 
 
 @dataclass
 class Corridor:
     """Stores metadata for a carved corridor."""
 
-    room_a_index: int
-    port_a_index: int
+    room_a_index: Optional[int]
+    port_a_index: Optional[int]
     room_b_index: Optional[int]
     port_b_index: Optional[int]
     width: int
     geometry: CorridorGeometry
     component_id: int = -1
-    joined_corridor_indices: Tuple[int, ...] = field(default_factory=tuple)
-    junction_tiles: Tuple[Tuple[int, int], ...] = field(default_factory=tuple)
+    joint_a: Optional[Tuple[str, int]] = None
+    joint_b: Optional[Tuple[str, int]] = None
+
+
+@dataclass
+class RightAngleJoint:
+    """Represents a 90-degree bend connecting exactly two corridors."""
+
+    tiles: Tuple[Tuple[int, int], ...]
+    width: int
+    connected_corridor_indices: Tuple[int, int] = field(default_factory=tuple)
+    component_id: int = -1
+
+
+@dataclass
+class TJunction:
+    """Represents a three-way corridor intersection."""
+
+    tiles: Tuple[Tuple[int, int], ...]
+    width: int
+    connected_corridor_indices: Tuple[int, int, int] = field(default_factory=tuple)
+    component_id: int = -1
+
+
+@dataclass
+class FourWayIntersection:
+    """Represents a four-way corridor intersection."""
+
+    tiles: Tuple[Tuple[int, int], ...]
+    width: int
+    connected_corridor_indices: Tuple[int, int, int, int] = field(default_factory=tuple)
+    component_id: int = -1
 
 
 @dataclass
