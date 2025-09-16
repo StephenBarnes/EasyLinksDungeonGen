@@ -197,7 +197,7 @@ def main() -> None:
         height=50,
         room_templates=room_templates,
         direct_link_counts_probs={0: 0.65, 1: 0.2, 2: 0.1, 3: 0.05},
-        num_rooms_to_place=30,
+        num_rooms_to_place=40,
         min_room_separation=1,
     )
 
