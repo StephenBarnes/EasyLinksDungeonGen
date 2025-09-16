@@ -88,6 +88,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0.5, 1), direction=(0, 1), widths=frozenset((2,))),
             ],
             kinds=frozenset((RoomKind.BEND,)),
+            allow_door_overlaps=True,
         ),
         RoomTemplate(
             name="bend_2x2_left",
@@ -97,6 +98,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0.5, 1), direction=(0, 1), widths=frozenset((2,))),
             ],
             kinds=frozenset((RoomKind.BEND,)),
+            allow_door_overlaps=True,
         ),
         RoomTemplate(
             name="bend_2x4_right",
@@ -106,6 +108,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0.5, 3), direction=(0, 1), widths=frozenset((2,))),
             ],
             kinds=frozenset((RoomKind.BEND,)),
+            allow_door_overlaps=True,
         ),
         RoomTemplate(
             name="bend_2x4_left",
@@ -115,6 +118,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0.5, 3), direction=(0, 1), widths=frozenset((2,))),
             ],
             kinds=frozenset((RoomKind.BEND,)),
+            allow_door_overlaps=True,
         ),
         RoomTemplate(
             name="bend_4x4_right",
@@ -124,6 +128,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(1.5, 3), direction=(0, 1), widths=frozenset((4,))),
             ],
             kinds=frozenset((RoomKind.BEND,)),
+            allow_door_overlaps=True,
         ),
         RoomTemplate(
             name="bend_4x4_left",
@@ -133,11 +138,12 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(1.5, 3), direction=(0, 1), widths=frozenset((4,))),
             ],
             kinds=frozenset((RoomKind.BEND,)),
+            allow_door_overlaps=True,
         ),
 
         # Special room templates for T-junctions and 4-way intersections.
         RoomTemplate(
-            name="junction_2_2",
+            name="junction_2x2",
             size=(2, 2),
             ports=[
                 PortTemplate(pos=(0.5, 0), direction=(0, -1), widths=frozenset((2,))),
@@ -146,6 +152,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0, 0.5), direction=(-1, 0), widths=frozenset((2,))),
             ],
             kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
+            allow_door_overlaps=True,
         ),
         RoomTemplate(
             name="junction_2x4",
@@ -157,6 +164,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0, 1.5), direction=(-1, 0), widths=frozenset((4,))),
             ],
             kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
+            allow_door_overlaps=True,
         ),
         RoomTemplate(
             name="junction_4x4",
@@ -164,10 +172,11 @@ def build_default_room_templates() -> list[RoomTemplate]:
             ports=[
                 PortTemplate(pos=(1.5, 0), direction=(0, -1), widths=frozenset((4,))),
                 PortTemplate(pos=(1.5, 3), direction=(0, 1), widths=frozenset((4,))),
-                PortTemplate(pos=(0, 1.5), direction=(1, 0), widths=frozenset((4,))),
-                PortTemplate(pos=(3, 1.5), direction=(-1, 0), widths=frozenset((4,))),
+                PortTemplate(pos=(0, 1.5), direction=(-1, 0), widths=frozenset((4,))),
+                PortTemplate(pos=(3, 1.5), direction=(1, 0), widths=frozenset((4,))),
             ],
             kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
+            allow_door_overlaps=True,
         ),
     ]
 
@@ -182,7 +191,7 @@ def main() -> None:
         height=50,
         room_templates=room_templates,
         direct_link_counts_probs={0: 0.65, 1: 0.2, 2: 0.1, 3: 0.05},
-        num_rooms_to_place=12,
+        num_rooms_to_place=15,
         min_room_separation=1,
     )
 
