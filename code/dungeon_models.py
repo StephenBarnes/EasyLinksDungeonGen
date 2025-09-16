@@ -79,10 +79,10 @@ class WorldPort:
 
 @dataclass(frozen=True)
 class CorridorGeometry:
-    """Holds the tile layout for a straight corridor between two ports."""
+    """Holds the tile layout for a corridor between two ports."""
 
     tiles: Tuple[Tuple[int, int], ...]
-    axis_index: int  # 0 for horizontal corridors, 1 for vertical
+    axis_index: Optional[int]  # 0 for horizontal, 1 for vertical, None for bent corridors
     port_axis_values: Tuple[int, int]
 
 

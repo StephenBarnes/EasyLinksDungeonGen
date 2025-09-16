@@ -100,6 +100,10 @@ def main() -> None:
     # Debug: check number of components
     print(f"Component count: {len(generator.get_component_summary())}")
 
+    generator.create_bent_room_links()
+
+    print(f"Component count: {len(generator.get_component_summary())}")
+
     generator.draw_to_grid(draw_macrogrid=False)
     generator.print_grid(horizontal_sep="")
 

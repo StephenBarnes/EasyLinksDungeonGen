@@ -485,7 +485,10 @@ class DungeonGenerator:
                 chosen_idx: Optional[int] = None
                 for idx in sorted(intersecting_indices):
                     candidate = self.corridors[idx]
-                    if candidate.geometry.axis_index == axis_index:
+                    if (
+                        candidate.geometry.axis_index is not None
+                        and candidate.geometry.axis_index == axis_index
+                    ):
                         continue
                     chosen_idx = idx
                     break
@@ -525,6 +528,107 @@ class DungeonGenerator:
             steps += 1
             if steps > max_steps:
                 return None
+
+    def _build_bent_corridor_geometry(
+        self,
+        room_index_a: int,
+        port_a: WorldPort,
+        room_index_b: int,
+        port_b: WorldPort,
+        width: int,
+        tile_to_room: Dict[Tuple[int, int], int],
+    ) -> Optional[CorridorGeometry]:
+        """Return geometry tiles for a right-angled corridor if valid."""
+        dot = port_a.direction[0] * port_b.direction[0] + port_a.direction[1] * port_b.direction[1]
+        if dot != 0:
+            return None
+
+        axis_a = 0 if port_a.direction[0] != 0 else 1
+        axis_b = 0 if port_b.direction[0] != 0 else 1
+
+        exit_a = self._port_exit_axis_value(port_a, axis_a)
+        exit_b = self._port_exit_axis_value(port_b, axis_b)
+
+        if axis_a == axis_b:
+            return None
+
+        if axis_a == 0:
+            horizontal_port = port_a
+            horizontal_exit = exit_a
+            vertical_port = port_b
+            vertical_exit = exit_b
+        else:
+            horizontal_port = port_b
+            horizontal_exit = exit_b
+            vertical_port = port_a
+            vertical_exit = exit_a
+
+        horizontal_direction = horizontal_port.direction[0]
+        vertical_direction = vertical_port.direction[1]
+        if horizontal_direction == 0 or vertical_direction == 0:
+            return None
+
+        horizontal_cross = self._corridor_cross_coords(horizontal_port.pos[1], width)
+        vertical_cross = self._corridor_cross_coords(vertical_port.pos[0], width)
+        bend_y_min = horizontal_cross[0]
+        bend_y_max = horizontal_cross[-1]
+        bend_x_min = vertical_cross[0]
+        bend_x_max = vertical_cross[-1]
+
+        if horizontal_direction > 0:
+            if bend_x_min < horizontal_exit:
+                return None
+            horizontal_axis_values = range(horizontal_exit, bend_x_max + 1)
+        else:
+            if bend_x_max > horizontal_exit:
+                return None
+            horizontal_axis_values = range(horizontal_exit, bend_x_min - 1, -1)
+
+        if vertical_direction > 0:
+            if bend_y_min < vertical_exit:
+                return None
+            vertical_axis_values = range(vertical_exit, bend_y_max + 1)
+        else:
+            if bend_y_max > vertical_exit:
+                return None
+            vertical_axis_values = range(vertical_exit, bend_y_min - 1, -1)
+
+        tiles: List[Tuple[int, int]] = []
+        tile_set: Set[Tuple[int, int]] = set()
+
+        def add_tile(tile: Tuple[int, int]) -> bool:
+            if tile in tile_set:
+                return True
+            x, y = tile
+            if not (0 <= x < self.width and 0 <= y < self.height):
+                return False
+            if tile in tile_to_room:
+                return False
+            if tile in self.corridor_tiles or tile in self.t_junction_tiles:
+                return False
+            tile_set.add(tile)
+            tiles.append(tile)
+            return True
+
+        for axis_value in horizontal_axis_values:
+            for cross in horizontal_cross:
+                tile = (axis_value, cross)
+                if not add_tile(tile):
+                    return None
+
+        for axis_value in vertical_axis_values:
+            for cross in vertical_cross:
+                tile = (cross, axis_value)
+                if not add_tile(tile):
+                    return None
+
+        for x in range(bend_x_min, bend_x_max + 1):
+            for y in range(bend_y_min, bend_y_max + 1):
+                if not add_tile((x, y)):
+                    return None
+
+        port_axis_values = (exit_a, exit_b)
+        return CorridorGeometry(tiles=tuple(tiles), axis_index=None, port_axis_values=port_axis_values)
 
     def _list_available_ports(
         self, room_world_ports: List[List[WorldPort]]
@@ -726,6 +830,130 @@ class DungeonGenerator:
             f"Easylink step 3: created {created} corridor-to-corridor links "
             f"(tracking {len(self.t_junction_tiles)} T-junction tiles)."
         )
+        return created
+
+    def create_bent_room_links(self) -> int:
+        """Implements Step 4: link different components via 90-degree corridors."""
+        if len(self.placed_rooms) < 2:
+            print("Easylink step 4: skipped - not enough rooms to connect.")
+            return 0
+
+        if len({*self.room_components, *self.corridor_components}) <= 1:
+            print("Easylink step 4: skipped - already fully connected.")
+            return 0
+
+        tile_to_room = self._build_room_tile_lookup()
+        room_world_ports = [room.get_world_ports() for room in self.placed_rooms]
+        available_ports = self._list_available_ports(room_world_ports)
+        if len(available_ports) < 2:
+            print("Easylink step 4: skipped - not enough unused ports.")
+            return 0
+
+        port_records = [
+            {
+                "room_idx": room_idx,
+                "port_idx": port_idx,
+                "component_id": self.placed_rooms[room_idx].component_id,
+                "port": world_port,
+            }
+            for room_idx, port_idx, world_port in available_ports
+        ]
+
+        candidates: List[Tuple[float, int, int, int, int, int, CorridorGeometry]] = []
+        for i, port_a_info in enumerate(port_records):
+            for port_b_info in port_records[i + 1 :]:
+                if port_a_info["component_id"] == port_b_info["component_id"]:
+                    continue
+
+                port_a = port_a_info["port"]
+                port_b = port_b_info["port"]
+                dot = port_a.direction[0] * port_b.direction[0] + port_a.direction[1] * port_b.direction[1]
+                if dot != 0:
+                    continue
+
+                common_widths = port_a.widths & port_b.widths
+                if not common_widths:
+                    continue
+
+                chosen_geometry: Optional[CorridorGeometry] = None
+                chosen_width: Optional[int] = None
+                for width in sorted(common_widths):
+                    geometry = self._build_bent_corridor_geometry(
+                        port_a_info["room_idx"],
+                        port_a,
+                        port_b_info["room_idx"],
+                        port_b,
+                        width,
+                        tile_to_room,
+                    )
+                    if geometry is not None:
+                        chosen_geometry = geometry
+                        chosen_width = width
+                        break
+
+                if chosen_geometry is None or chosen_width is None:
+                    continue
+
+                distance = abs(port_a.pos[0] - port_b.pos[0]) + abs(port_a.pos[1] - port_b.pos[1])
+                candidates.append(
+                    (
+                        float(distance),
+                        chosen_width,
+                        port_a_info["room_idx"],
+                        port_a_info["port_idx"],
+                        port_b_info["room_idx"],
+                        port_b_info["port_idx"],
+                        chosen_geometry,
+                    )
+                )
+
+        if not candidates:
+            print("Easylink step 4: no viable bent corridor opportunities found.")
+            return 0
+
+        candidates.sort(key=lambda item: (item[0], item[1]))
+
+        created = 0
+        for _, width, room_a_idx, port_a_idx, room_b_idx, port_b_idx, geometry in candidates:
+            room_a = self.placed_rooms[room_a_idx]
+            room_b = self.placed_rooms[room_b_idx]
+
+            if port_a_idx in room_a.connected_port_indices:
+                continue
+            if port_b_idx in room_b.connected_port_indices:
+                continue
+            if room_a.component_id == room_b.component_id:
+                continue
+            if any(tile in self.corridor_tiles or tile in self.t_junction_tiles for tile in geometry.tiles):
+                continue
+
+            component_id = self._merge_components(room_a.component_id, room_b.component_id)
+
+            corridor = Corridor(
+                room_a_index=room_a_idx,
+                port_a_index=port_a_idx,
+                room_b_index=room_b_idx,
+                port_b_index=port_b_idx,
+                width=width,
+                geometry=geometry,
+                component_id=component_id,
+            )
+
+            self._register_corridor(corridor, component_id)
+            room_a.connected_port_indices.add(port_a_idx)
+            room_b.connected_port_indices.add(port_b_idx)
+
+            for tile in geometry.tiles:
+                if tile in self.corridor_tiles:
+                    self.four_way_junctions.add(tile)
+                self.corridor_tiles.add(tile)
+
+            created += 1
+
+            if len({*self.room_components, *self.corridor_components}) <= 1:
+                break
+
+        print(f"Easylink step 4: created {created} bent corridors.")
         return created
 
     def place_rooms(self) -> None:
