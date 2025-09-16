@@ -114,16 +114,6 @@ class Corridor:
 
 
 @dataclass
-class RightAngleJoint:
-    """Represents a 90-degree bend connecting exactly two corridors."""
-
-    tiles: Tuple[Tuple[int, int], ...]
-    width: int
-    connected_corridor_indices: Tuple[int, int] = field(default_factory=tuple)
-    component_id: int = -1
-
-
-@dataclass
 class TJunction:
     """Represents a three-way corridor intersection."""
 
