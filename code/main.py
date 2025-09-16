@@ -193,11 +193,11 @@ def main() -> None:
 
     room_templates = build_default_room_templates()
     generator = DungeonGenerator(
-        width=150,
+        width=80,
         height=50,
         room_templates=room_templates,
-        direct_link_counts_probs={0: 0.65, 1: 0.2, 2: 0.1, 3: 0.05},
-        num_rooms_to_place=40,
+        direct_link_counts_probs={0: 0.55, 1: 0.25, 2: 0.15, 3: 0.05},
+        num_rooms_to_place=30,
         min_room_separation=1,
     )
 
@@ -215,7 +215,7 @@ def main() -> None:
 
     # Print dungeon at this stage, to help check changes.
     generator.draw_to_grid(draw_macrogrid=False)
-    generator.print_grid(horizontal_sep="")
+    generator.print_grid(horizontal_sep=" ")
 
     # Step 4: create bent links between rooms
     num_created = generator.create_bent_room_links()
@@ -229,7 +229,7 @@ def main() -> None:
     print(f"Component count: {len(generator.get_component_summary())}")
 
     generator.draw_to_grid(draw_macrogrid=False)
-    generator.print_grid(horizontal_sep="")
+    generator.print_grid(horizontal_sep=" ")
 
 if __name__ == "__main__":
     main()
