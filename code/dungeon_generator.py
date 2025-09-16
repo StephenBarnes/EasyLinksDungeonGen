@@ -6,7 +6,7 @@ import math
 import random
 import itertools
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from dungeon_constants import (
     DOOR_MACRO_ALIGNMENT_OFFSETS,
@@ -684,16 +684,24 @@ class DungeonGenerator:
         return None
 
     def _split_existing_corridor_geometries(
-        self, corridor: Corridor, junction_axis: int
+        self, corridor: Corridor, junction_tiles: Iterable[Tuple[int, int]]
     ) -> Tuple[Optional[CorridorGeometry], Optional[CorridorGeometry]]:
         geometry = corridor.geometry
         axis_index = geometry.axis_index
         if axis_index is None:
             return None, None
+        axis_values = {tile[axis_index] for tile in junction_tiles}
+        if not axis_values:
+            return None, None
         cross_coords = self._corridor_cross_from_geometry(geometry, axis_index)
         start_axis, end_axis = geometry.port_axis_values
-        seg_to_a = self._build_segment_geometry(axis_index, start_axis, junction_axis, cross_coords)
-        seg_to_b = self._build_segment_geometry(axis_index, end_axis, junction_axis, cross_coords)
+        axis_min = min(axis_values)
+        axis_max = max(axis_values)
+        direction = 1 if end_axis > start_axis else -1
+        boundary_start = axis_min if direction > 0 else axis_max
+        boundary_end = axis_max if direction > 0 else axis_min
+        seg_to_a = self._build_segment_geometry(axis_index, start_axis, boundary_start, cross_coords)
+        seg_to_b = self._build_segment_geometry(axis_index, end_axis, boundary_end, cross_coords)
         return seg_to_a, seg_to_b
 
     def _apply_existing_corridor_segments(
@@ -820,13 +828,32 @@ class DungeonGenerator:
                 if chosen_idx is None:
                     return None
 
+                existing_geometry = self.corridors[chosen_idx].geometry
+                existing_axis_index = existing_geometry.axis_index
+                if existing_axis_index is None:
+                    return None
+                existing_cross_coords = existing_geometry.cross_coords or self._corridor_cross_from_geometry(
+                    existing_geometry, existing_axis_index
+                )
+
+                intersection_tiles: Set[Tuple[int, int]] = set()
+                for new_cross in cross_coords:
+                    for existing_cross in existing_cross_coords:
+                        if axis_index == 0:
+                            # New corridor runs horizontally; existing corridor is vertical.
+                            tile = (existing_cross, new_cross)
+                        else:
+                            # New corridor runs vertically; existing corridor is horizontal.
+                            tile = (new_cross, existing_cross)
+                        intersection_tiles.add(tile)
+
                 geometry = CorridorGeometry(
                     tiles=tuple(path_tiles),
                     axis_index=axis_index,
                     port_axis_values=(exit_axis_value, axis_value),
                     cross_coords=tuple(cross_coords),
                 )
-                return geometry, chosen_idx, tuple(tiles_for_step)
+                return geometry, chosen_idx, tuple(sorted(intersection_tiles))
 
             if any(tile in self.corridor_tiles for tile in tiles_for_step):
                 return None
@@ -1130,10 +1157,22 @@ class DungeonGenerator:
                     if existing_axis_index is None:
                         continue
 
-                    existing_axis_value = overlap_tiles[0][existing_axis_index]
+                    existing_cross_coords = existing_corridor.geometry.cross_coords or self._corridor_cross_from_geometry(
+                        existing_corridor.geometry, existing_axis_index
+                    )
+
+                    intersection_tiles: Set[Tuple[int, int]] = set()
+                    for new_cross in cross_coords_new:
+                        for existing_cross in existing_cross_coords:
+                            if geometry.axis_index == 0:
+                                tile = (existing_cross, new_cross)
+                            else:
+                                tile = (new_cross, existing_cross)
+                            intersection_tiles.add(tile)
+
                     seg_existing_a, seg_existing_b = self._split_existing_corridor_geometries(
                         existing_corridor,
-                        existing_axis_value,
+                        intersection_tiles,
                     )
                     if seg_existing_a is None or seg_existing_b is None:
                         continue
@@ -1196,7 +1235,7 @@ class DungeonGenerator:
                     placement = self._attempt_place_special_room(
                         requirements,
                         self.four_way_room_templates,
-                        allowed_overlap_tiles=set(overlap_tiles),
+                        allowed_overlap_tiles=intersection_tiles,
                     )
                     if placement is None:
                         raise RuntimeError("Unable to place a four-way junction room with available templates.")
@@ -1361,10 +1400,9 @@ class DungeonGenerator:
             ):
                 continue
 
-            junction_axis = junction_tiles[0][existing_axis_index]
             seg_existing_a, seg_existing_b = self._split_existing_corridor_geometries(
                 target_corridor,
-                junction_axis,
+                junction_tiles,
             )
             if seg_existing_a is None or seg_existing_b is None:
                 continue
