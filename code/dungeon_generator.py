@@ -851,10 +851,44 @@ class DungeonGenerator:
         axis_min = min(axis_values)
         axis_max = max(axis_values)
         direction = 1 if end_axis > start_axis else -1
-        boundary_start = axis_min if direction > 0 else axis_max
-        boundary_end = axis_max if direction > 0 else axis_min
-        seg_to_a = self._build_segment_geometry(axis_index, start_axis, boundary_start, cross_coords)
-        seg_to_b = self._build_segment_geometry(axis_index, end_axis, boundary_end, cross_coords)
+
+        tiles_to_a: List[Tuple[int, int]] = []
+        tiles_to_b: List[Tuple[int, int]] = []
+        for tile in geometry.tiles:
+            axis_value = tile[axis_index]
+            if direction > 0:
+                if axis_value < axis_min:
+                    tiles_to_a.append(tile)
+                elif axis_value > axis_max:
+                    tiles_to_b.append(tile)
+            else:
+                if axis_value > axis_max:
+                    tiles_to_a.append(tile)
+                elif axis_value < axis_min:
+                    tiles_to_b.append(tile)
+
+        if not tiles_to_a or not tiles_to_b:
+            return None, None
+
+        if direction > 0:
+            seg_a_axes = (start_axis, axis_min)
+            seg_b_axes = (end_axis, axis_max)
+        else:
+            seg_a_axes = (start_axis, axis_max)
+            seg_b_axes = (end_axis, axis_min)
+
+        seg_to_a = CorridorGeometry(
+            tiles=tuple(tiles_to_a),
+            axis_index=axis_index,
+            port_axis_values=seg_a_axes,
+            cross_coords=cross_coords,
+        )
+        seg_to_b = CorridorGeometry(
+            tiles=tuple(tiles_to_b),
+            axis_index=axis_index,
+            port_axis_values=seg_b_axes,
+            cross_coords=cross_coords,
+        )
         return seg_to_a, seg_to_b
 
     def _apply_existing_corridor_segments(
@@ -1867,15 +1901,21 @@ class DungeonGenerator:
             for j in range(h):
                 for i in range(w):
                     self.grid[y + j][x + i] = room_char
-        # Draw corridors as floor tiles
-        for corridor in self.corridors:
-            for tx, ty in corridor.geometry.tiles:
-                self.grid[ty][tx] = '░'
-        # Then overlay ports
+        # Draw ports
         for room in self.placed_rooms:
             for port in room.get_world_ports():
                 for tx, ty in port.tiles:
                     self.grid[ty][tx] = '█'
+        # Draw corridors as floor tiles
+        for corridor in self.corridors:
+            for tx, ty in corridor.geometry.tiles:
+                if self.grid[ty][tx] == '░':
+                    print(f"Warning: tile {tx, ty} appears to be in multiple corridors")
+                elif self.grid[ty][tx] == '█':
+                    print(f"Warning: tile {tx, ty} is overlapping a room (on one of the port markers)")
+                elif self.grid[ty][tx] != ' ':
+                    print(f"Warning: tile {tx, ty} is in a room but also in a corridor")
+                self.grid[ty][tx] = '░'
         if draw_macrogrid:
             self._draw_macrogrid_overlay()
 
