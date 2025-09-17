@@ -1220,8 +1220,8 @@ class DungeonGenerator:
 
         return None
 
-    def create_easy_links(self, step_num) -> int:
-        """Implements Step 2: connect facing ports with straight corridors."""
+    def grower_room_to_room(self) -> int:
+        """Implements the room-to-room dungeon-grower: connect facing ports with straight corridors."""
         if not self.placed_rooms:
             raise ValueError("ERROR: no placed rooms.")
 
@@ -1507,15 +1507,15 @@ class DungeonGenerator:
 
         created = len(self.corridors) - initial_corridor_count
         print(
-            f"Easylink step {step_num}: created {created} straight corridors "
+            f"Room-to-room grower: created {created} straight corridors "
             f"and placed {intersection_rooms_created} four-way rooms."
         )
         return created
 
-    def create_easy_t_junctions(self, fill_probability: float, step_num: int) -> int:
-        """Implements Step 3, 5, and 7: link ports to corridors with straight passages."""
+    def grower_room_to_corridor(self, fill_probability: float) -> int:
+        """Implements the room-to-corridor dungeon-grower: link ports to corridors with straight passages."""
         if not self.corridors:
-            print(f"Easylink step {step_num}: skipped - no existing corridors to join.")
+            print("Room-to-corridor grower: skipped - no existing corridors to join.")
             return 0
 
         room_world_ports = [room.get_world_ports() for room in self.placed_rooms]
@@ -1698,29 +1698,29 @@ class DungeonGenerator:
             junction_rooms_created += 1
 
         print(
-            f"Easylink step {step_num}: created {created} corridor-to-corridor links "
+            f"Room-to-corridor grower: created {created} corridor-to-corridor links "
             f"and placed {junction_rooms_created} T-junction rooms."
         )
         return created
 
-    def create_bent_room_links(self) -> int:
-        """Implements Step 4: link different components via 90-degree corridors."""
+    def grower_bent_room_to_room(self) -> int:
+        """Implements bent-room-to-room grower: link different components via 90-degree corridors."""
         if len(self.placed_rooms) < 2:
-            print("Easylink step 4: skipped - not enough rooms to connect.")
+            print("Bent-room-to-room grower: skipped - not enough rooms to connect.")
             return 0
 
         if not self.bend_room_templates:
-            print("Easylink step 4: skipped - no bend room templates available.")
+            print("Bent-room-to-room grower: skipped - no bend room templates available.")
             return 0
 
         if self.component_manager.has_single_component():
-            print("Easylink step 4: skipped - already fully connected.")
+            print("Bent-room-to-room grower: skipped - already fully connected.")
             return 0
 
         room_world_ports = [room.get_world_ports() for room in self.placed_rooms]
         available_ports = self._list_available_ports(room_world_ports)
         if len(available_ports) < 2:
-            print("Easylink step 4: skipped - not enough unused ports.")
+            print("Bent-room-to-room grower: skipped - not enough unused ports.")
             return 0
 
         port_records = [
@@ -1763,7 +1763,7 @@ class DungeonGenerator:
                 )
 
         if not candidates:
-            print("Easylink step 4: no viable bend room opportunities found.")
+            print("Bent-room-to-room grower: no viable bend room opportunities found.")
             return 0
 
         candidates.sort(key=lambda item: (item[0], item[1]))
@@ -1815,13 +1815,13 @@ class DungeonGenerator:
                 break
 
         if created == 0:
-            print("Easylink step 4: no bend room placements succeeded.")
+            print("Bent-room-to-room grower: no bend room placements succeeded.")
         else:
-            print(f"Easylink step 4: created {created} bend rooms.")
+            print(f"Bent-room-to-room grower: created {created} bend rooms.")
         return created
 
     def place_rooms(self) -> None:
-        """Implements Step 1: Randomly place rooms with macro-grid aligned ports."""
+        """Implements step 1: Randomly place rooms with macro-grid aligned ports."""
         print(f"Attempting to place {self.num_rooms_to_place} rooms...")
         placed_count = 0
         consecutive_limit_exceeded = 0
