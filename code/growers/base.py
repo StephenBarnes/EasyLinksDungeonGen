@@ -6,7 +6,7 @@ from typing import Generic, Iterable, Optional, TypeVar
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from dungeon_generator import DungeonGenerator
+    from grower_context import GrowerContext
 
 
 C = TypeVar("C")
@@ -24,10 +24,10 @@ class GrowerStepResult:
 class CandidateFinder(Generic[C, P]):
     """Locate potential growth opportunities in the current dungeon state."""
 
-    def find_candidates(self, generator: DungeonGenerator) -> Iterable[C]:
+    def find_candidates(self, context: GrowerContext) -> Iterable[C]:
         raise NotImplementedError
 
-    def on_success(self, generator: DungeonGenerator, candidate: C, plan: P) -> None:
+    def on_success(self, context: GrowerContext, candidate: C, plan: P) -> None:
         """Hook called when a plan for the candidate is successfully applied."""
         return None
 
@@ -35,17 +35,17 @@ class CandidateFinder(Generic[C, P]):
 class GeometryPlanner(Generic[C, P]):
     """Validate a candidate and compute geometry to add to the dungeon."""
 
-    def plan(self, generator: DungeonGenerator, candidate: C) -> Optional[P]:
+    def plan(self, context: GrowerContext, candidate: C) -> Optional[P]:
         raise NotImplementedError
 
 
 class GrowerApplier(Generic[C, P]):
     """Commit a planned geometry change to the dungeon state."""
 
-    def apply(self, generator: DungeonGenerator, candidate: C, plan: P) -> GrowerStepResult:
+    def apply(self, context: GrowerContext, candidate: C, plan: P) -> GrowerStepResult:
         raise NotImplementedError
 
-    def finalize(self, generator: DungeonGenerator) -> int:
+    def finalize(self, context: GrowerContext) -> int:
         """Perform any final bookkeeping; return the grower's reported result."""
         return 0
 
@@ -65,15 +65,15 @@ class DungeonGrower(Generic[C, P]):
         self.geometry_planner = geometry_planner
         self.applier = applier
 
-    def run(self, generator: DungeonGenerator) -> int:
+    def run(self, context: GrowerContext) -> int:
         """Execute the grower pipeline and return the aggregate result."""
-        for candidate in self.candidate_finder.find_candidates(generator):
-            plan = self.geometry_planner.plan(generator, candidate)
+        for candidate in self.candidate_finder.find_candidates(context):
+            plan = self.geometry_planner.plan(context, candidate)
             if plan is None:
                 continue
-            result = self.applier.apply(generator, candidate, plan)
+            result = self.applier.apply(context, candidate, plan)
             if result.applied:
-                self.candidate_finder.on_success(generator, candidate, plan)
+                self.candidate_finder.on_success(context, candidate, plan)
             if result.stop:
                 break
-        return self.applier.finalize(generator)
+        return self.applier.finalize(context)

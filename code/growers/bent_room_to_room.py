@@ -17,7 +17,7 @@ from growers.base import (
 )
 
 if TYPE_CHECKING:
-    from dungeon_generator import DungeonGenerator
+    from grower_context import GrowerContext
 
 
 @dataclass(frozen=True)
@@ -43,10 +43,10 @@ class BentRoomCandidateFinder(CandidateFinder[BentRoomCandidate, BentRoomPlan]):
     def __init__(self) -> None:
         self._used_ports: Set[Tuple[int, int]] = set()
 
-    def find_candidates(self, generator: DungeonGenerator) -> Iterable[BentRoomCandidate]:
+    def find_candidates(self, context: GrowerContext) -> Iterable[BentRoomCandidate]:
         self._used_ports.clear()
-        room_world_ports = [room.get_world_ports() for room in generator.layout.placed_rooms]
-        available_ports = generator._list_available_ports(room_world_ports)
+        room_world_ports = [room.get_world_ports() for room in context.layout.placed_rooms]
+        available_ports = context.list_available_ports(room_world_ports)
 
         records = [
             {
@@ -62,7 +62,7 @@ class BentRoomCandidateFinder(CandidateFinder[BentRoomCandidate, BentRoomPlan]):
             for port_b_info in records[i + 1 :]:
                 room_a_idx = port_a_info["room_idx"]
                 room_b_idx = port_b_info["room_idx"]
-                if generator.layout.rooms_share_component(room_a_idx, room_b_idx):
+                if context.layout.rooms_share_component(room_a_idx, room_b_idx):
                     continue
 
                 port_a = port_a_info["port"]
@@ -103,7 +103,7 @@ class BentRoomCandidateFinder(CandidateFinder[BentRoomCandidate, BentRoomPlan]):
 
     def on_success(
         self,
-        generator: DungeonGenerator,
+        context: GrowerContext,
         candidate: BentRoomCandidate,
         plan: BentRoomPlan,
     ) -> None:
@@ -114,14 +114,14 @@ class BentRoomCandidateFinder(CandidateFinder[BentRoomCandidate, BentRoomPlan]):
 class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
     def plan(
         self,
-        generator: DungeonGenerator,
+        context: GrowerContext,
         candidate: BentRoomCandidate,
     ) -> Optional[BentRoomPlan]:
-        if not generator.bend_room_templates:
+        if not context.bend_room_templates:
             return None
 
-        room_a = generator.layout.placed_rooms[candidate.room_a_idx]
-        room_b = generator.layout.placed_rooms[candidate.room_b_idx]
+        room_a = context.layout.placed_rooms[candidate.room_a_idx]
+        room_b = context.layout.placed_rooms[candidate.room_b_idx]
         port_a = room_a.get_world_ports()[candidate.port_a_idx]
         port_b = room_b.get_world_ports()[candidate.port_b_idx]
 
@@ -151,9 +151,9 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
         horizontal_dir = horizontal_info["port"].direction
         vertical_dir = vertical_info["port"].direction
 
-        candidate_room_index = len(generator.layout.placed_rooms)
+        candidate_room_index = len(context.layout.placed_rooms)
 
-        bend_templates = list(generator.bend_room_templates)
+        bend_templates = list(context.bend_room_templates)
         random.shuffle(bend_templates)
 
         for width in width_options:
@@ -198,7 +198,7 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
                                 int(round(candidate_y)),
                                 rotation,
                             )
-                            if not generator.layout.is_valid_placement(placed_bend):
+                            if not context.layout.is_valid_placement(placed_bend):
                                 continue
 
                             bend_bounds = placed_bend.get_bounds()
@@ -207,7 +207,7 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
                             for ty in range(bend_bounds.y, bend_bounds.max_y):
                                 for tx in range(bend_bounds.x, bend_bounds.max_x):
                                     tile = TilePos(tx, ty)
-                                    if generator.layout.spatial_index.has_corridor_at(tile):
+                                    if context.layout.spatial_index.has_corridor_at(tile):
                                         overlaps_corridor = True
                                         break
                                     extra_room_tiles[tile] = candidate_room_index
@@ -223,7 +223,7 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
                             if width not in bend_world_h.widths or width not in bend_world_v.widths:
                                 continue
 
-                            geom_h = generator._build_corridor_geometry(
+                            geom_h = context.build_corridor_geometry(
                                 horizontal_info["room_idx"],
                                 horizontal_info["port"],
                                 candidate_room_index,
@@ -234,7 +234,7 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
                             if geom_h is None:
                                 continue
 
-                            geom_v = generator._build_corridor_geometry(
+                            geom_v = context.build_corridor_geometry(
                                 vertical_info["room_idx"],
                                 vertical_info["port"],
                                 candidate_room_index,
@@ -245,9 +245,9 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
                             if geom_v is None:
                                 continue
 
-                            if any(generator.layout.spatial_index.has_corridor_at(tile) for tile in geom_h.tiles):
+                            if any(context.layout.spatial_index.has_corridor_at(tile) for tile in geom_h.tiles):
                                 continue
-                            if any(generator.layout.spatial_index.has_corridor_at(tile) for tile in geom_v.tiles):
+                            if any(context.layout.spatial_index.has_corridor_at(tile) for tile in geom_v.tiles):
                                 continue
 
                             tiles_h = set(geom_h.tiles)
@@ -284,19 +284,19 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
 
     def apply(
         self,
-        generator: DungeonGenerator,
+        context: GrowerContext,
         candidate: BentRoomCandidate,
         plan: BentRoomPlan,
     ) -> GrowerStepResult:
-        component_id = generator.layout.merge_components(
-            generator.layout.normalize_room_component(candidate.room_a_idx),
-            generator.layout.normalize_room_component(candidate.room_b_idx),
+        component_id = context.layout.merge_components(
+            context.layout.normalize_room_component(candidate.room_a_idx),
+            context.layout.normalize_room_component(candidate.room_b_idx),
         )
-        generator.layout.set_room_component(candidate.room_a_idx, component_id)
-        generator.layout.set_room_component(candidate.room_b_idx, component_id)
+        context.layout.set_room_component(candidate.room_a_idx, component_id)
+        context.layout.set_room_component(candidate.room_b_idx, component_id)
 
-        bend_room_index = len(generator.layout.placed_rooms)
-        generator.layout.register_room(plan.bend_room, component_id)
+        bend_room_index = len(context.layout.placed_rooms)
+        context.layout.register_room(plan.bend_room, component_id)
 
         for existing_room_idx, existing_port_idx, bend_port_idx, geometry in plan.corridor_plans:
             corridor = Corridor(
@@ -308,15 +308,15 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
                 geometry=geometry,
                 component_id=component_id,
             )
-            generator.layout.register_corridor(corridor, component_id)
-            generator.layout.placed_rooms[existing_room_idx].connected_port_indices.add(existing_port_idx)
-            generator.layout.placed_rooms[bend_room_index].connected_port_indices.add(bend_port_idx)
+            context.layout.register_corridor(corridor, component_id)
+            context.layout.placed_rooms[existing_room_idx].connected_port_indices.add(existing_port_idx)
+            context.layout.placed_rooms[bend_room_index].connected_port_indices.add(bend_port_idx)
 
         self._created += 1
-        stop = generator.layout.component_manager.has_single_component()
+        stop = context.layout.component_manager.has_single_component()
         return GrowerStepResult(applied=True, stop=stop)
 
-    def finalize(self, generator: DungeonGenerator) -> int:
+    def finalize(self, context: GrowerContext) -> int:
         if self._created == 0:
             print("Bent-room-to-room grower: no bend room placements succeeded.")
         else:
@@ -324,14 +324,14 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
         return self._created
 
 
-def run_bent_room_to_room_grower(generator: DungeonGenerator) -> int:
-    if len(generator.layout.placed_rooms) < 2:
+def run_bent_room_to_room_grower(context: GrowerContext) -> int:
+    if len(context.layout.placed_rooms) < 2:
         print("Bent-room-to-room grower: skipped - not enough rooms to connect.")
         return 0
-    if not generator.bend_room_templates:
+    if not context.bend_room_templates:
         print("Bent-room-to-room grower: skipped - no bend room templates available.")
         return 0
-    if generator.layout.component_manager.has_single_component():
+    if context.layout.component_manager.has_single_component():
         print("Bent-room-to-room grower: skipped - already fully connected.")
         return 0
 
@@ -341,4 +341,4 @@ def run_bent_room_to_room_grower(generator: DungeonGenerator) -> int:
         geometry_planner=BentRoomGeometryPlanner(),
         applier=BentRoomApplier(),
     )
-    return grower.run(generator)
+    return grower.run(context)
