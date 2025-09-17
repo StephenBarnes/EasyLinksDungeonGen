@@ -2,28 +2,9 @@
 
 ## Data structures and models
 
-### Introduce a SpatialIndex class.
-
-Currently the code frequently rebuilds tile-to-room and tile-to-corridor lookups in `_build_room_tile_lookup` and `corridor_tile_index`. This is inefficient, and the logic is spread out.
-
-Responsibilities:
-
-* Maintain a grid or dictionary mapping tile coordinates `(x,y)` to the objects (rooms and corridors) that occupy them.
-* Provide methods like `add(obj, bounds)`, `remove(obj)`, `is_area_clear(bounds, ignore_list=[...])`, `get_objects_at(tile)`.
-
-The benefit of this is that all spatial query logic is centralized. When we add a room, we update the index once. All subsequent collision checks become much cleaner and faster. This completely replaces `corridor_tiles` and `corridor_tile_index`.
-
-### Use a DSU (disjoint set union) for component management.
-
-The current component management (`room_components`, `corridor_components`, `_merge_components`) involves iterating through lists to update component IDs. This is an O(N) operation for every merge.
-
-A DSU (or Union-Find) data structure is designed for exactly this problem. Merging two components becomes a nearly constant-time operation.
-
-You could create a `ComponentManager` class that wraps a DSU. It would track rooms and corridors by their list indices. `_merge_components(id1, id2)` becomes `component_manager.union(item1_id, item2_id)`.
-
 ### Introduce a DungeonConfig dataclass
 
-Currently we're passing a long list of parameters to `DungeonGenerator.__init__`. We also have constants in `dungeon_constants.py`. It would be better to create a single `DungeonConfig` dataclass that holds all of the constructor's arguments, and some of those constants (such as the macro-grid size, the random seed, and numbers for max connected placement attempts and max consecutive limit failures.
+Currently we're passing a long list of parameters to `DungeonGenerator.__init__`. We also have constants in `dungeon_constants.py`. It would be better to create a single `DungeonConfig` dataclass that holds all of the constructor's arguments, and some of those constants (such as the macro-grid size, the random seed, and numbers for max connected placement attempts and max consecutive limit failures).
 
 ## Simplifying complex logic
 
