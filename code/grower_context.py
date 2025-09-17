@@ -180,12 +180,30 @@ class GrowerContext:
         )
 
     @staticmethod
-    def port_center_from_tiles(inside_tiles: Tuple[TilePos, ...]) -> Tuple[float, float]:
+    def port_center_from_tiles(
+        direction: Direction, inside_tiles: Tuple[TilePos, ...]
+    ) -> Tuple[float, float]:
         if not inside_tiles:
             raise ValueError("At least one tile is required")
-        xs = [tile.x + 0.5 for tile in inside_tiles]
-        ys = [tile.y + 0.5 for tile in inside_tiles]
-        return sum(xs) / len(xs), sum(ys) / len(ys)
+
+        unique_xs = sorted({tile.x for tile in inside_tiles})
+        unique_ys = sorted({tile.y for tile in inside_tiles})
+        if not unique_xs or not unique_ys:
+            raise ValueError("Unable to determine port center from tiles")
+
+        if direction in (Direction.NORTH, Direction.SOUTH):
+            # Horizontal doorway: port positions in templates use the first tile's center
+            # as the reference, so we mirror that instead of averaging tile centers.
+            span = len(unique_xs)
+            center_x = unique_xs[0] + (span / 2.0) - 0.5
+            center_y = float(min(unique_ys)) if direction is Direction.NORTH else float(max(unique_ys))
+        else:
+            # Vertical doorway: align with the first tile along Y, matching template math.
+            span = len(unique_ys)
+            center_y = unique_ys[0] + (span / 2.0) - 0.5
+            center_x = float(max(unique_xs)) if direction is Direction.EAST else float(min(unique_xs))
+
+        return float(center_x), float(center_y)
 
     def build_port_requirement_from_segment(
         self,
@@ -224,7 +242,7 @@ class GrowerContext:
         width = len(outside_tiles)
         if width != expected_width:
             return None
-        center = self.port_center_from_tiles(inside_tiles)
+        center = self.port_center_from_tiles(direction, inside_tiles)
         return PortRequirement(
             center=center,
             direction=direction,
