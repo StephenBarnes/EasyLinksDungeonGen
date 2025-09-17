@@ -1,5 +1,7 @@
 - Add a RoomKind.DIRECT_LINKED.
 
+- Add stop_after_first arg to through-room generator, so that we don't place too many through-rooms, especially since that reduces room template diversity.
+
 - Add options to run growers only for specific rooms or corridors, to improve performance. When one step adds rooms or corridors, we only want subsequent growers to consider new connections involving those, not re-consider all of the possible options.
 
 - Use different intra-component connection thresholds for different growers.

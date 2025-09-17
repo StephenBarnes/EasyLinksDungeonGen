@@ -208,6 +208,9 @@ class RootRoomPlacer:
                 # Special case: don't place a 1-door room directly linked to a 1-door room because we won't be able to connect them to the rest of the dungeon.
                 if len(anchor_room.template.ports) == 1 and len(template.ports) == 1:
                     continue
+                # Don't place the same room directly connected, to increase diversity of room types.
+                if anchor_room.template.name == template.name:
+                    continue
                 rotation = Rotation.random()
                 temp_room = PlacedRoom(template, 0, 0, rotation)
                 rot_ports = temp_room.get_world_ports()

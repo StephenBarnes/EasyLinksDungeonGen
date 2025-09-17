@@ -250,6 +250,7 @@ class BentRoomToCorridorGeometryPlanner(
             perp_translation_value = room_port.pos[0] - match_port.pos[0]
         perp_translation = aligned_translation(perp_translation_value)
         if perp_translation is None:
+            print(f"Warning: room template {template.name} resulted in off-grid perp translation")
             return None
 
         match_port_exit_base = context.port_exit_axis_value(match_port, axis_index)

@@ -11,7 +11,7 @@ from room_templates import prototype_room_templates
 
 def main() -> None:
     # Config for a big "realistic" dungeon - generally seems to be over 90% connected, though the generation process is slow.
-    if False:
+    if True:
         config = DungeonConfig(
             width=200,
             height=200,
@@ -27,22 +27,23 @@ def main() -> None:
             random_seed=None,
         )
 
-    # Smaller config for prototyping.
-    config = DungeonConfig(
-        width=80,
-        height=50,
-        room_templates=prototype_room_templates,
-        direct_link_counts_probs={0: 0.55, 1: 0.25, 2: 0.15, 3: 0.05},
-        # direct_link_counts_probs={0: 1}, # For debugging
-        num_rooms_to_place=15,
-        min_room_separation=1,
-        min_intra_component_connection_distance=10,
-        max_desired_corridor_length=8,
-        max_parallel_corridor_perpendicular_distance=8,
-        max_parallel_corridor_overlap=5,
-        min_rooms_required=10,
-        random_seed=None,
-    )
+    # Smaller config for rapid testing.
+    if False:
+        config = DungeonConfig(
+            width=80,
+            height=50,
+            room_templates=prototype_room_templates,
+            direct_link_counts_probs={0: 0.55, 1: 0.25, 2: 0.15, 3: 0.05},
+            # direct_link_counts_probs={0: 1}, # For debugging
+            num_rooms_to_place=15,
+            min_room_separation=1,
+            min_intra_component_connection_distance=10,
+            max_desired_corridor_length=8,
+            max_parallel_corridor_perpendicular_distance=8,
+            max_parallel_corridor_overlap=5,
+            min_rooms_required=10,
+            random_seed=None,
+        )
 
 
     seed = config.random_seed
