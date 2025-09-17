@@ -310,6 +310,37 @@ class BentRoomToCorridorGeometryPlanner(
         port_mapping: Dict[int, int]
         junction_room: PlacedRoom
 
+    @staticmethod
+    def _boundary_tiles(segment: CorridorGeometry, axis_index: Optional[int]) -> Set[TilePos]:
+        if axis_index is None:
+            return set()
+        start_axis, end_axis = segment.port_axis_values
+        if start_axis == end_axis:
+            return set()
+        sign = 1 if end_axis > start_axis else -1
+        boundary_axis = end_axis - sign
+        return {
+            tile
+            for tile in segment.tiles
+            if (tile[axis_index] == boundary_axis)
+        }
+
+    @classmethod
+    def _compute_allowed_overlap_tiles(
+        cls,
+        branch_geometry: CorridorGeometry,
+        branch_axis: int,
+        seg_existing_a: CorridorGeometry,
+        seg_existing_b: CorridorGeometry,
+        corridor_axis: int,
+        junction_tiles: Iterable[TilePos],
+    ) -> Set[TilePos]:
+        allowed: Set[TilePos] = set(junction_tiles)
+        allowed.update(cls._boundary_tiles(branch_geometry, branch_axis))
+        allowed.update(cls._boundary_tiles(seg_existing_a, corridor_axis))
+        allowed.update(cls._boundary_tiles(seg_existing_b, corridor_axis))
+        return allowed
+
     def _build_branch_plan(
         self,
         context: GrowerContext,
@@ -411,16 +442,24 @@ class BentRoomToCorridorGeometryPlanner(
         ):
             return None
 
-        placement = context.attempt_place_special_room( # <--- I think the bug is happening due to this call rejecting valid room candidates.
+        allowed_overlap_tiles = self._compute_allowed_overlap_tiles(
+            branch_geometry,
+            branch_axis,
+            seg_existing_a,
+            seg_existing_b,
+            corridor_axis,
+            junction_tiles,
+        )
+
+        placement = context.attempt_place_special_room(
             requirements,
             context.get_room_templates(RoomKind.T_JUNCTION),
             RoomKind.T_JUNCTION,
-            allowed_overlap_tiles=set(junction_tiles),
+            allowed_overlap_tiles=allowed_overlap_tiles,
             allowed_overlap_corridors={target_corridor_idx},
         )
         if placement is None:
             return None
-        print(f"Placed special room {placement[0].template.name}") # Debugging
 
         placed_room, port_mapping, geometry_overrides = placement
         if geometry_overrides:

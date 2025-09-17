@@ -6,7 +6,7 @@ import itertools
 import math
 import random
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from dungeon_config import DungeonConfig
@@ -396,6 +396,95 @@ class GrowerContext:
             return None
         template_candidates = self.weighted_templates(kind, templates)
 
+        def axis_index_for(direction: Direction) -> int:
+            return 0 if direction.dx != 0 else 1
+
+        def axis_dir_for(direction: Direction) -> int:
+            return direction.dx if direction.dx != 0 else direction.dy
+
+        def sort_key(axis_index: int, tile: TilePos) -> Tuple[int, int]:
+            return (tile[1 - axis_index], tile[axis_index])
+
+        def shift_tiles(tiles: Tuple[TilePos, ...], delta: int, axis_index: int) -> Tuple[TilePos, ...]:
+            if axis_index == 0:
+                return tuple(TilePos(tile.x + delta, tile.y) for tile in tiles)
+            return tuple(TilePos(tile.x, tile.y + delta) for tile in tiles)
+
+        def align_tiles(
+            base_tiles: Tuple[TilePos, ...],
+            target_tiles: Tuple[TilePos, ...],
+            axis_index: int,
+        ) -> Optional[int]:
+            if not base_tiles or len(base_tiles) != len(target_tiles):
+                return None
+            base_sorted = sorted(base_tiles, key=lambda t: sort_key(axis_index, t))
+            target_sorted = sorted(target_tiles, key=lambda t: sort_key(axis_index, t))
+            deltas: Set[int] = set()
+            for base_tile, target_tile in zip(base_sorted, target_sorted):
+                if base_tile[1 - axis_index] != target_tile[1 - axis_index]:
+                    return None
+                deltas.add(target_tile[axis_index] - base_tile[axis_index])
+            if len(deltas) != 1:
+                return None
+            return next(iter(deltas))
+
+        def adjust_requirement(
+            requirements_list: List[PortRequirement],
+            idx: int,
+            candidate_tiles: Tuple[TilePos, ...],
+        ) -> Optional[PortRequirement]:
+            requirement = requirements_list[idx]
+            axis_index = axis_index_for(requirement.direction)
+            geometry_tiles: Optional[Set[TilePos]] = None
+            if requirement.geometry is not None:
+                geometry_tiles = set(requirement.geometry.tiles)
+
+            delta_inside = align_tiles(requirement.inside_tiles, candidate_tiles, axis_index)
+            if delta_inside is not None:
+                if delta_inside == 0 and candidate_tiles == requirement.inside_tiles:
+                    return requirement
+                new_inside = tuple(candidate_tiles)
+                new_outside = shift_tiles(requirement.outside_tiles, delta_inside, axis_index)
+                if geometry_tiles is not None and not all(tile in geometry_tiles for tile in new_outside):
+                    return None
+                new_center = self.port_center_from_tiles(requirement.direction, new_inside)
+                return replace(requirement, center=new_center, inside_tiles=new_inside, outside_tiles=new_outside)
+
+            delta_outside = align_tiles(requirement.outside_tiles, candidate_tiles, axis_index)
+            if delta_outside is not None:
+                axis_dir = axis_dir_for(requirement.direction)
+                new_inside = tuple(candidate_tiles)
+                new_outside = shift_tiles(new_inside, axis_dir, axis_index)
+                if geometry_tiles is not None and not all(tile in geometry_tiles for tile in new_outside):
+                    return None
+                new_center = self.port_center_from_tiles(requirement.direction, new_inside)
+                return replace(requirement, center=new_center, inside_tiles=new_inside, outside_tiles=new_outside)
+
+            return None
+
+        def compute_translation_candidates(
+            requirement: PortRequirement, rotated_port: WorldPort
+        ) -> List[Tuple[int, int]]:
+            candidates: List[Tuple[int, int]] = []
+
+            def add_candidate(center: Tuple[float, float]) -> None:
+                dx = center[0] - rotated_port.pos[0]
+                dy = center[1] - rotated_port.pos[1]
+                if (
+                    math.isclose(dx, round(dx), abs_tol=1e-6)
+                    and math.isclose(dy, round(dy), abs_tol=1e-6)
+                ):
+                    candidate = (int(round(dx)), int(round(dy)))
+                    if candidate not in candidates:
+                        candidates.append(candidate)
+
+            add_candidate(requirement.center)
+            if requirement.outside_tiles:
+                outside_center = self.port_center_from_tiles(requirement.direction, requirement.outside_tiles)
+                add_candidate(outside_center)
+
+            return candidates
+
         for template in template_candidates:
             for rotation in VALID_ROTATIONS:
                 base_room = PlacedRoom(template, 0, 0, rotation)
@@ -405,82 +494,80 @@ class GrowerContext:
 
                 port_indices = list(range(len(rotated_ports)))
                 for selected_ports in itertools.permutations(port_indices, len(required_ports)):
-                    translation: Optional[Tuple[int, int]] = None
-                    mapping: Dict[int, int] = {}
-                    valid = True
+                    directions_ok = True
                     for req_idx, port_idx in enumerate(selected_ports):
                         requirement = required_ports[req_idx]
                         rotated_port = rotated_ports[port_idx]
                         if rotated_port.direction != requirement.direction:
-                            valid = False
+                            directions_ok = False
                             break
                         if requirement.width not in rotated_port.widths:
-                            valid = False
+                            directions_ok = False
                             break
-
-                        dx = requirement.center[0] - rotated_port.pos[0]
-                        dy = requirement.center[1] - rotated_port.pos[1]
-                        if translation is None:
-                            if not (
-                                math.isclose(dx, round(dx), abs_tol=1e-6)
-                                and math.isclose(dy, round(dy), abs_tol=1e-6)
-                            ):
-                                valid = False
-                                break
-                            translation = (int(round(dx)), int(round(dy)))
-                        else:
-                            tx, ty = translation
-                            if not (
-                                math.isclose(rotated_port.pos[0] + tx, requirement.center[0], abs_tol=1e-6)
-                                and math.isclose(rotated_port.pos[1] + ty, requirement.center[1], abs_tol=1e-6)
-                            ):
-                                valid = False
-                                break
-                        mapping[req_idx] = port_idx
-
-                    if not valid or translation is None:
+                    if not directions_ok:
                         continue
 
-                    candidate = PlacedRoom(template, translation[0], translation[1], rotation)
-                    if not self.layout.is_valid_placement(
-                        candidate, ignore_corridors=allowed_overlap_corridors
-                    ):
-                        continue
-                    overlaps_blocked, overlap_tiles = self.room_overlaps_disallowed_corridor_tiles(
-                        candidate,
-                        allowed_overlap_tiles,
-                        allowed_overlap_corridors,
+                    first_requirement = required_ports[0]
+                    first_port_idx = selected_ports[0]
+                    translation_candidates = compute_translation_candidates(
+                        first_requirement,
+                        rotated_ports[first_port_idx],
                     )
-                    if overlaps_blocked:
+                    if not translation_candidates:
                         continue
 
-                    world_ports = candidate.get_world_ports()
-                    ports_match = True
-                    for req_idx, port_idx in mapping.items():
-                        requirement = required_ports[req_idx]
-                        world_port = world_ports[port_idx]
-                        candidate_tiles = self.world_port_tiles_for_width(world_port, requirement.width)
-                        if candidate_tiles != requirement.inside_tiles:
-                            ports_match = False
-                            break
-                    if not ports_match:
-                        continue
-
-                    geometry_overrides: Dict[int, CorridorGeometry] = {}
-                    for req_idx, requirement in enumerate(required_ports):
-                        geometry = requirement.geometry
-                        if geometry is None:
+                    for translation in translation_candidates:
+                        candidate = PlacedRoom(template, translation[0], translation[1], rotation)
+                        if not self.layout.is_valid_placement(
+                            candidate, ignore_corridors=allowed_overlap_corridors
+                        ):
                             continue
-                        trimmed = self.trim_geometry_for_room(geometry, candidate)
-                        if trimmed is None:
-                            ports_match = False
-                            break
-                        if trimmed is not geometry:
-                            geometry_overrides[req_idx] = trimmed
-                    if not ports_match:
-                        continue
+                        overlaps_blocked, overlap_tiles = self.room_overlaps_disallowed_corridor_tiles(
+                            candidate,
+                            allowed_overlap_tiles,
+                            allowed_overlap_corridors,
+                        )
+                        if overlaps_blocked:
+                            continue
 
-                    return candidate, mapping, geometry_overrides
+                        world_ports = candidate.get_world_ports()
+                        adjusted_requirements = list(required_ports)
+                        mapping: Dict[int, int] = {}
+                        ports_match = True
+                        for req_idx, port_idx in enumerate(selected_ports):
+                            requirement = adjusted_requirements[req_idx]
+                            world_port = world_ports[port_idx]
+                            candidate_tiles = self.world_port_tiles_for_width(
+                                world_port, requirement.width
+                            )
+                            if candidate_tiles != requirement.inside_tiles:
+                                adjusted = adjust_requirement(adjusted_requirements, req_idx, candidate_tiles)
+                                if adjusted is None:
+                                    ports_match = False
+                                    break
+                                adjusted_requirements[req_idx] = adjusted
+                            mapping[req_idx] = port_idx
+                        if not ports_match:
+                            continue
+
+                        required_ports[:] = adjusted_requirements
+                        requirements = adjusted_requirements
+
+                        geometry_overrides: Dict[int, CorridorGeometry] = {}
+                        for req_idx, requirement in enumerate(requirements):
+                            geometry = requirement.geometry
+                            if geometry is None:
+                                continue
+                            trimmed = self.trim_geometry_for_room(geometry, candidate)
+                            if trimmed is None:
+                                ports_match = False
+                                break
+                            if trimmed is not geometry:
+                                geometry_overrides[req_idx] = trimmed
+                        if not ports_match:
+                            continue
+
+                        return candidate, mapping, geometry_overrides
 
         return None
 
