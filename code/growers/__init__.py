@@ -5,6 +5,7 @@ from .bent_room_to_corridor import (
     run_bent_room_to_corridor_grower,
 )
 from .through_corridor import run_through_corridor_grower
+from .rotate_rooms import run_rotate_rooms_grower
 
 __all__ = [
     "run_room_to_room_grower",
@@ -12,4 +13,5 @@ __all__ = [
     "run_bent_room_to_room_grower",
     "run_bent_room_to_corridor_grower",
     "run_through_corridor_grower",
+    "run_rotate_rooms_grower",
 ]

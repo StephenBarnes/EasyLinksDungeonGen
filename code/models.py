@@ -75,6 +75,8 @@ class RoomTemplate:
     preferred_center_facing_dir: Optional[Direction] = None
     allow_door_overlaps: bool = False
     macro_grid_size: int = 4
+    is_symmetric_90: bool = field(init=False)
+    is_symmetric_180: bool = field(init=False)
 
     def __post_init__(self) -> None:
         width, height = self.size
@@ -85,6 +87,7 @@ class RoomTemplate:
         self.bend_weight = float(self.bend_weight)
         self.four_way_weight = float(self.four_way_weight)
         self.validate()
+        self._initialize_symmetry_flags()
 
     def validate(self):
         """Run several validations to check that our room templates and their ports obey constraints."""
@@ -268,6 +271,46 @@ class RoomTemplate:
                         raise ValueError(
                             f"Room {self.name} rotation {rotation.degrees} ports misaligned on macro-grid (y)"
                         )
+
+    def _initialize_symmetry_flags(self) -> None:
+        base_signature = self._rotation_signature(Rotation.DEG_0)
+        symmetric_90 = self._has_rotational_symmetry(Rotation.DEG_90, base_signature)
+        self.is_symmetric_90 = symmetric_90
+        if symmetric_90:
+            self.is_symmetric_180 = True
+            return
+        self.is_symmetric_180 = self._has_rotational_symmetry(Rotation.DEG_180, base_signature)
+
+    def _has_rotational_symmetry(
+        self,
+        rotation: Rotation,
+        base_signature: Tuple[Tuple[int, int, Tuple[int, int], Tuple[int, ...]], ...],
+    ) -> bool:
+        if rotation in (Rotation.DEG_90, Rotation.DEG_270) and self.size[0] != self.size[1]:
+            return False
+        if rotation is Rotation.DEG_0:
+            return True
+        rotated_signature = self._rotation_signature(rotation)
+        return rotated_signature == base_signature
+
+    def _rotation_signature(
+        self,
+        rotation: Rotation,
+    ) -> Tuple[Tuple[int, int, Tuple[int, int], Tuple[int, ...]], ...]:
+        width, height = self.size
+        entries: List[Tuple[int, int, Tuple[int, int], Tuple[int, ...]]] = []
+        for port in self.ports:
+            rotated_x, rotated_y = rotate_point(port.pos[0], port.pos[1], width, height, rotation)
+            rotated_dir = rotate_direction(port.direction, rotation)
+            signature = (
+                int(round(rotated_x * 2)),
+                int(round(rotated_y * 2)),
+                rotated_dir.value,
+                tuple(sorted(port.widths)),
+            )
+            entries.append(signature)
+        entries.sort()
+        return tuple(entries)
 
 @dataclass(frozen=True)
 class WorldPort:

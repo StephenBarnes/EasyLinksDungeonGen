@@ -13,6 +13,7 @@ from growers import (
     run_room_to_room_grower,
     run_bent_room_to_corridor_grower,
     run_through_corridor_grower,
+    run_rotate_rooms_grower,
 )
 from dungeon_layout import DungeonLayout
 from root_room_placer import RootRoomPlacer
@@ -56,25 +57,40 @@ class DungeonGenerator:
         )
 
         # Step 2: Run our growers repeatedly. Re-run simpler rules until they terminate.
-        run_room_to_room_grower(context)
-        num_created = 1
-        while num_created > 0:
-            num_created = run_room_to_corridor_grower(context, fill_probability=1)
-            num_created += run_room_to_room_grower(context)
+        def run_connection_growers() -> None:
+            run_room_to_room_grower(context)
+            num_created_local = 1
+            while num_created_local > 0:
+                num_created_local = run_room_to_corridor_grower(context, fill_probability=1)
+                num_created_local += run_room_to_room_grower(context)
 
-        num_created = run_bent_room_to_room_grower(context, stop_after_first=True)
-        while num_created > 0:
-            num_created = run_room_to_room_grower(context)
-            num_created += run_room_to_corridor_grower(context, fill_probability=1)
-            if num_created == 0:
-                num_created = run_bent_room_to_room_grower(context, stop_after_first=True)
+            num_created_local = run_bent_room_to_room_grower(context, stop_after_first=True)
+            while num_created_local > 0:
+                num_created_local = run_room_to_room_grower(context)
+                num_created_local += run_room_to_corridor_grower(context, fill_probability=1)
+                if num_created_local == 0:
+                    num_created_local = run_bent_room_to_room_grower(context, stop_after_first=True)
 
-        num_created = run_bent_room_to_corridor_grower(context, stop_after_first=True, fill_probability=1)
-        while num_created > 0:
-            num_created = run_room_to_room_grower(context)
-            num_created += run_room_to_corridor_grower(context, fill_probability=1)
-            if num_created == 0:
-                num_created = run_bent_room_to_corridor_grower(context, stop_after_first=True, fill_probability=1)
+            num_created_local = run_bent_room_to_corridor_grower(
+                context,
+                stop_after_first=True,
+                fill_probability=1,
+            )
+            while num_created_local > 0:
+                num_created_local = run_room_to_room_grower(context)
+                num_created_local += run_room_to_corridor_grower(context, fill_probability=1)
+                if num_created_local == 0:
+                    num_created_local = run_bent_room_to_corridor_grower(
+                        context,
+                        stop_after_first=True,
+                        fill_probability=1,
+                    )
+
+        run_connection_growers()
+
+        rotated_rooms = run_rotate_rooms_grower(context)
+        if rotated_rooms > 0:
+            run_connection_growers()
 
         num_created = run_through_corridor_grower(context)
         while num_created > 0:
