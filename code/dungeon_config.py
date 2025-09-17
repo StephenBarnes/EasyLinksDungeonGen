@@ -29,6 +29,7 @@ class DungeonConfig:
     max_connected_placement_attempts: int = 40
     max_consecutive_limit_failures: int = 5
     min_intra_component_connection_distance: int = 10
+    max_desired_corridor_length: int = 10
     _door_macro_alignment_offsets: Mapping[Direction, tuple[float, float]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:

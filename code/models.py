@@ -25,7 +25,8 @@ class RoomKind(Enum):
     STANDALONE = 0 # Created by step 1, either placed as a root or created directly linked to existing room.
     T_JUNCTION = 1 # Connects 2 corridors/rooms in line with each other, plus a third corridor/room perpendicular.
     BEND = 2 # Connects to 2 passages/rooms at right angles.
-    FOUR_WAY = 3 # Connects to 4 passages or room ports.
+    THROUGH = 3 # Used to break up long passages; connects to 2 passages on opposite sides.
+    FOUR_WAY = 4 # Connects to 4 passages or room ports.
 
 
 @dataclass
@@ -70,6 +71,7 @@ class RoomTemplate:
     t_junction_weight: float = 1.0  # Weight when selecting as a T-junction special room.
     bend_weight: float = 1.0  # Weight when selecting as a bend special room.
     four_way_weight: float = 1.0  # Weight when selecting as a 4-way intersection.
+    through_weight: float = 1.0 # Weight when selecting as a through-room.
     preferred_center_facing_dir: Optional[Direction] = None
     allow_door_overlaps: bool = False
     macro_grid_size: int = 4
