@@ -2,9 +2,9 @@
 
 ## Data structures and models
 
-### Introduce a Rect dataclass.
+### Introduce a Point dataclass.
 
-Instead of passing (x, y, w, h) tuples everywhere, rather pass Rects. Implement methods like `overlaps(self, other: Rect) -> bool`, `expand(self, margin: int) -> Rect`, `contains(self, point: Point) -> bool`. Then use this to simplify some of DungeonGenerator's methods like `_rects_overlap` and `_expand_bounds` into `rect1.overlaps(rect2)` and `rect.expand(margin)`.
+Instead of passing Tuple[int, int] in many places, rather pass a new Point dataclass.
 
 ### Introduce a SpatialIndex class.
 
