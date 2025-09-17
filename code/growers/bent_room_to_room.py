@@ -1,3 +1,24 @@
+"""Connect orthogonal room ports by inserting an intermediate bend room.
+
+The grower enumerates every available room port, pairing ports from different
+rooms whose facing directions are perpendicular and share at least one corridor
+width. Candidate pairs are prioritized by Manhattan distance so that nearby
+connections are tried first.
+
+For each candidate, the planner iterates over compatible corridor widths, every
+eligible bend-room template, and all four cardinal rotations. It rotates a
+template, locates its ports that face the candidate ports, and translates the
+room so the selected ports coincide with the world coordinates of the two
+target ports. Placements are rejected if they require sub-tile offsets, collide
+with existing rooms or corridors, or reuse corridor tiles.
+
+Once a placement fits, the planner builds straight corridor geometries from
+each existing room to the bend room, verifying that the tile sets do not overlap
+and remain corridor-free inside the spatial index. When both corridors can be
+constructed, the plan is accepted and the applier merges the room components,
+registers the bend room, and commits the corridor geometries to the layout.
+"""
+
 from __future__ import annotations
 
 import math
@@ -159,9 +180,17 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
             return None
 
         for width in width_options:
-            for template in bend_templates:
-                for rotation in VALID_ROTATIONS:
-                    temp_room = PlacedRoom(template, 0, 0, rotation)
+                    temp_room, template, rotation = None, None, None
+                    for template in bend_templates:
+                        for rotation in VALID_ROTATIONS:
+                            # TODO: cache pre-rotated ports per template to avoid
+                            # repeatedly instantiating `PlacedRoom` for identical
+                            # rotation-width combinations.
+                            temp_room = PlacedRoom(template, 0, 0, rotation)
+                    assert temp_room is not None
+                    assert template is not None
+                    assert rotation is not None
+
                     rotated_ports = temp_room.get_world_ports()
 
                     horizontal_candidates = [
