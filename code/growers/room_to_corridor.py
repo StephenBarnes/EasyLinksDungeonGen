@@ -234,15 +234,15 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
         candidate: RoomToCorridorCandidate,
         plan: RoomToCorridorPlan,
     ) -> GrowerStepResult:
-        component_id = generator._merge_components(
-            generator._normalize_room_component(candidate.room_idx),
-            generator._normalize_corridor_component(plan.target_corridor_idx),
+        component_id = generator.layout.merge_components(
+            generator.layout.normalize_room_component(candidate.room_idx),
+            generator.layout.normalize_corridor_component(plan.target_corridor_idx),
         )
-        generator._set_room_component(candidate.room_idx, component_id)
-        generator._set_corridor_component(plan.target_corridor_idx, component_id)
+        generator.layout.set_room_component(candidate.room_idx, component_id)
+        generator.layout.set_corridor_component(plan.target_corridor_idx, component_id)
 
         junction_room_index = len(generator.placed_rooms)
-        generator._register_room(plan.junction_room, component_id)
+        generator.layout.register_room(plan.junction_room, component_id)
 
         branch_requirement = plan.requirements[plan.branch_requirement_idx]
         branch_geometry = branch_requirement.geometry
@@ -258,7 +258,7 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
             geometry=branch_geometry,
             component_id=component_id,
         )
-        new_corridor_idx = generator._register_corridor(new_corridor, component_id)
+        new_corridor_idx = generator.layout.register_corridor(new_corridor, component_id)
         generator.placed_rooms[candidate.room_idx].connected_port_indices.add(candidate.port_idx)
         generator.placed_rooms[junction_room_index].connected_port_indices.add(branch_port_idx)
         generator.room_corridor_links.add((candidate.room_idx, new_corridor_idx))

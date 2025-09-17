@@ -19,6 +19,7 @@ from growers import (
 )
 from growers.port_requirement import PortRequirement
 from spatial_index import SpatialIndex
+from dungeon_layout import DungeonLayout
 
 
 class DungeonGenerator:
@@ -26,8 +27,7 @@ class DungeonGenerator:
 
     def __init__(self, config: DungeonConfig) -> None:
         self.config = config
-        self.width = config.width
-        self.height = config.height
+        self.layout = DungeonLayout(config.width, config.height)
         self.macro_grid_size = config.macro_grid_size
 
         self.room_templates = list(config.room_templates)
@@ -40,18 +40,41 @@ class DungeonGenerator:
         # Minimum empty tiles between room bounding boxes, unless they connect at ports.
         self.min_room_separation = config.min_room_separation
         self.min_rooms_required = config.min_rooms_required
-        self.placed_rooms: List[PlacedRoom] = []
-        self.corridors: List[Corridor] = []
-        self.room_corridor_links: Set[Tuple[int, int]] = set()
         self.grid = [[" " for _ in range(self.width)] for _ in range(self.height)]
         # Probability distribution for number of immediate direct links per room
         # Example: {0: 0.4, 1: 0.3, 2: 0.3}
         self.direct_link_counts_probs = dict(config.direct_link_counts_probs)
-        self.component_manager = ComponentManager()
-        self.spatial_index = SpatialIndex()
         self._door_macro_alignment_offsets = dict(config.door_macro_alignment_offsets)
         self.max_connected_placement_attempts = config.max_connected_placement_attempts
         self.max_consecutive_limit_failures = config.max_consecutive_limit_failures
+
+    @property
+    def width(self) -> int:
+        return self.layout.width
+
+    @property
+    def height(self) -> int:
+        return self.layout.height
+
+    @property
+    def placed_rooms(self) -> List[PlacedRoom]:
+        return self.layout.placed_rooms
+
+    @property
+    def corridors(self) -> List[Corridor]:
+        return self.layout.corridors
+
+    @property
+    def room_corridor_links(self) -> Set[Tuple[int, int]]:
+        return self.layout.room_corridor_links
+
+    @property
+    def component_manager(self) -> ComponentManager:
+        return self.layout.component_manager
+
+    @property
+    def spatial_index(self) -> SpatialIndex:
+        return self.layout.spatial_index
 
     def generate(self) -> None:
         """Generates the dungeon, by invoking dungeon-growers."""
@@ -148,55 +171,9 @@ class DungeonGenerator:
             for x in range(self.width):
                 row[x] = " "
 
-    def _new_component_id(self) -> int:
-        return self.component_manager.new_component()
-
-    def _register_room(self, room: PlacedRoom, component_id: int) -> None:
-        self.placed_rooms.append(room)
-        room_index = len(self.placed_rooms) - 1
-        room.index = room_index
-        root = self.component_manager.register_room(component_id)
-        room.component_id = root
-        self.spatial_index.add_room(room_index, room)
-
-    def _register_corridor(self, corridor: Corridor, component_id: int) -> int:
-        self.corridors.append(corridor)
-        new_index = len(self.corridors) - 1
-        corridor.index = new_index
-        root = self.component_manager.register_corridor(component_id)
-        corridor.component_id = root
-        self.spatial_index.add_corridor(new_index, corridor.geometry.tiles)
-        return new_index
-
-    def _merge_components(self, *component_ids: int) -> int:
-        return self.component_manager.union(*component_ids)
-
     def get_component_summary(self) -> Dict[int, Dict[str, List[int]]]:
         """Return indices of rooms and corridors grouped by component id."""
-        return self.component_manager.component_summary()
-
-    def _set_room_component(self, room_idx: int, component_id: int) -> int:
-        root = self.component_manager.set_room_component(room_idx, component_id)
-        self.placed_rooms[room_idx].component_id = root
-        return root
-
-    def _set_corridor_component(self, corridor_idx: int, component_id: int) -> int:
-        root = self.component_manager.set_corridor_component(corridor_idx, component_id)
-        self.corridors[corridor_idx].component_id = root
-        return root
-
-    def _normalize_room_component(self, room_idx: int) -> int:
-        root = self.component_manager.room_component(room_idx)
-        self.placed_rooms[room_idx].component_id = root
-        return root
-
-    def _normalize_corridor_component(self, corridor_idx: int) -> int:
-        root = self.component_manager.corridor_component(corridor_idx)
-        self.corridors[corridor_idx].component_id = root
-        return root
-
-    def _rooms_share_component(self, room_a_idx: int, room_b_idx: int) -> bool:
-        return self._normalize_room_component(room_a_idx) == self._normalize_room_component(room_b_idx)
+        return self.layout.get_component_summary()
 
     def _random_macro_grid_point(self) -> Tuple[int, int]:
         max_macro_x = (self.width // self.macro_grid_size) - 1
@@ -315,7 +292,7 @@ class DungeonGenerator:
         """
         if anchor_room.index < 0:
             raise ValueError("Anchor room must be registered before creating connections")
-        anchor_component_id = self._normalize_room_component(anchor_room.index)
+        anchor_component_id = self.layout.normalize_room_component(anchor_room.index)
         anchor_world_ports = anchor_room.get_world_ports()
         available_anchor_indices = anchor_room.get_available_port_indices()
         random.shuffle(available_anchor_indices)
@@ -352,7 +329,7 @@ class DungeonGenerator:
                 ny = int(round(target_port_pos[1] - rpy))
                 candidate = PlacedRoom(template, nx, ny, rotation)
                 if self._is_valid_placement_with_anchor(candidate, anchor_room):
-                    self._register_room(candidate, anchor_component_id)
+                    self.layout.register_room(candidate, anchor_component_id)
                     anchor_room.connected_port_indices.add(anchor_idx)
                     candidate.connected_port_indices.add(cand_idx)
                     return candidate
@@ -928,12 +905,12 @@ class DungeonGenerator:
         corridor.port_b_index = primary_segment.port_b_index
         corridor.width = primary_segment.width
         corridor.geometry = primary_segment.geometry
-        self._set_corridor_component(corridor_idx, component_id)
+        self.layout.set_corridor_component(corridor_idx, component_id)
         self.spatial_index.add_corridor(corridor_idx, corridor.geometry.tiles)
         connected_indices.append(corridor_idx)
 
         for _, segment in segments[1:]:
-            new_idx = self._register_corridor(segment, component_id)
+            new_idx = self.layout.register_corridor(segment, component_id)
             connected_indices.append(new_idx)
 
         return connected_indices
@@ -1274,8 +1251,8 @@ class DungeonGenerator:
                 print(f"Exceeded attempt limit when placing root room number {root_room_index}.")
                 continue
 
-            component_id = self._new_component_id()
-            self._register_room(placed_room, component_id)
+            component_id = self.layout.new_component_id()
+            self.layout.register_room(placed_room, component_id)
             placed_count += 1
             placed_count += self._spawn_direct_links_recursive(placed_room)
             consecutive_limit_exceeded = 0

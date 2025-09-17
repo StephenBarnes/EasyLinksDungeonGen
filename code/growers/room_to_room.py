@@ -304,12 +304,12 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
         before = len(generator.corridors)
 
         if isinstance(plan, DirectRoomConnectionPlan):
-            component_id = generator._merge_components(
-                generator._normalize_room_component(candidate.room_a_idx),
-                generator._normalize_room_component(candidate.room_b_idx),
+            component_id = generator.layout.merge_components(
+                generator.layout.normalize_room_component(candidate.room_a_idx),
+                generator.layout.normalize_room_component(candidate.room_b_idx),
             )
-            generator._set_room_component(candidate.room_a_idx, component_id)
-            generator._set_room_component(candidate.room_b_idx, component_id)
+            generator.layout.set_room_component(candidate.room_a_idx, component_id)
+            generator.layout.set_room_component(candidate.room_b_idx, component_id)
 
             corridor = Corridor(
                 room_a_index=candidate.room_a_idx,
@@ -320,21 +320,21 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
                 geometry=plan.geometry,
                 component_id=component_id,
             )
-            generator._register_corridor(corridor, component_id)
+            generator.layout.register_corridor(corridor, component_id)
             generator.placed_rooms[candidate.room_a_idx].connected_port_indices.add(candidate.port_a_idx)
             generator.placed_rooms[candidate.room_b_idx].connected_port_indices.add(candidate.port_b_idx)
         else:
-            component_id = generator._merge_components(
-                generator._normalize_room_component(candidate.room_a_idx),
-                generator._normalize_room_component(candidate.room_b_idx),
-                generator._normalize_corridor_component(plan.existing_corridor_idx),
+            component_id = generator.layout.merge_components(
+                generator.layout.normalize_room_component(candidate.room_a_idx),
+                generator.layout.normalize_room_component(candidate.room_b_idx),
+                generator.layout.normalize_corridor_component(plan.existing_corridor_idx),
             )
-            generator._set_room_component(candidate.room_a_idx, component_id)
-            generator._set_room_component(candidate.room_b_idx, component_id)
-            generator._set_corridor_component(plan.existing_corridor_idx, component_id)
+            generator.layout.set_room_component(candidate.room_a_idx, component_id)
+            generator.layout.set_room_component(candidate.room_b_idx, component_id)
+            generator.layout.set_corridor_component(plan.existing_corridor_idx, component_id)
 
             junction_room_index = len(generator.placed_rooms)
-            generator._register_room(plan.junction_room, component_id)
+            generator.layout.register_room(plan.junction_room, component_id)
 
             for key, source_room_idx, source_port_idx in (
                 ("new_a", candidate.room_a_idx, candidate.port_a_idx),
@@ -357,7 +357,7 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
                     geometry=geometry_segment,
                     component_id=component_id,
                 )
-                generator._register_corridor(corridor, component_id)
+                generator.layout.register_corridor(corridor, component_id)
                 generator.placed_rooms[source_room_idx].connected_port_indices.add(source_port_idx)
                 generator.placed_rooms[junction_room_index].connected_port_indices.add(junction_port_idx)
 
