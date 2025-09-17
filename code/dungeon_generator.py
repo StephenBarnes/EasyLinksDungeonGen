@@ -12,6 +12,7 @@ from growers import (
     run_bent_room_to_room_grower,
     run_room_to_corridor_grower,
     run_room_to_room_grower,
+    run_through_corridor_grower,
 )
 from dungeon_layout import DungeonLayout
 from root_room_placer import RootRoomPlacer
@@ -68,5 +69,9 @@ class DungeonGenerator:
         while num_created > 0:
             num_created = run_room_to_room_grower(context)
             num_created += run_room_to_corridor_grower(context, fill_probability=1)
-        
+
+        num_created = run_through_corridor_grower(context)
+        while num_created > 0:
+            num_created = run_through_corridor_grower(context)
+
         # Additional growers will be invoked here, then step 3.

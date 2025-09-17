@@ -120,6 +120,8 @@ class RoomTemplate:
             return self.bend_weight
         if kind is RoomKind.FOUR_WAY:
             return self.four_way_weight
+        if kind is RoomKind.THROUGH:
+            return self.through_weight
         return 1.0
 
     def validate_ports(self):
