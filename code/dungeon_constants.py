@@ -17,6 +17,5 @@ DOOR_MACRO_ALIGNMENT_OFFSETS = {
     Direction.EAST: (DOOR_WHOLE_OFFSET, DOOR_FRAC_OFFSET),
 }
 
-VALID_ROTATIONS = Rotation.all()
 MAX_CONNECTED_PLACEMENT_ATTEMPTS = 40
 MAX_CONSECUTIVE_LIMIT_FAILURES = 5 # We abort adding new rooms after we've reached max placement attempts too many times in a row.

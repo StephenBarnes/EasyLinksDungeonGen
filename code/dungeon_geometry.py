@@ -34,6 +34,7 @@ class Rotation(Enum):
     def all(cls) -> Tuple[Rotation, ...]:
         return tuple(cls)
 
+VALID_ROTATIONS = Rotation.all()
 
 class Direction(Enum):
     """Cardinal directions with unit vectors on the tile grid."""
@@ -72,7 +73,11 @@ class Direction(Enum):
     @classmethod
     def all(cls) -> Tuple[Direction, ...]:
         return tuple(cls)
+    
+    def dot(self, other: Direction) -> int:
+        return self.dx * other.dx + self.dy * other.dy
 
+VALID_DIRECTIONS = tuple(Direction)
 
 RotationLike = Union[int, Rotation]
 DirectionLike = Union[Tuple[int, int], Direction]
@@ -208,9 +213,3 @@ def rotate_direction(direction: DirectionLike, rotation: RotationLike) -> Direct
     if rotation is Rotation.DEG_270:
         return Direction.from_tuple((-dy, dx))
     raise AssertionError(f"Unhandled rotation {rotation}")
-
-
-def rotate_directions(directions: Iterable[DirectionLike], rotation: RotationLike) -> Tuple[Direction, ...]:
-    """Convenience helper to rotate multiple directions at once."""
-    rotation = _ensure_rotation(rotation)
-    return tuple(rotate_direction(direction, rotation) for direction in directions)

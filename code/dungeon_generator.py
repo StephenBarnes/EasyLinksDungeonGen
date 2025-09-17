@@ -13,10 +13,9 @@ from dungeon_constants import (
     DOOR_MACRO_ALIGNMENT_OFFSETS,
     MACRO_GRID_SIZE,
     MAX_CONNECTED_PLACEMENT_ATTEMPTS,
-    VALID_ROTATIONS,
     MAX_CONSECUTIVE_LIMIT_FAILURES,
 )
-from dungeon_geometry import Direction, Rotation, TilePos, rotate_direction
+from dungeon_geometry import Direction, Rotation, TilePos, rotate_direction, VALID_ROTATIONS
 from dungeon_models import RoomKind, Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
 
 
@@ -35,14 +34,6 @@ class PortRequirement:
     port_index: Optional[int] = None
     corridor_idx: Optional[int] = None
     corridor_end: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.direction, Direction):
-            object.__setattr__(
-                self,
-                "direction",
-                Direction.from_tuple(tuple(int(v) for v in self.direction)),
-            )
 
 
 class DungeonGenerator:
@@ -1100,11 +1091,7 @@ class DungeonGenerator:
         port_a = ports_a[port_a_idx]
         port_b = ports_b[port_b_idx]
 
-        dot = (
-            port_a.direction.dx * port_b.direction.dx
-            + port_a.direction.dy * port_b.direction.dy
-        )
-        if dot != 0:
+        if port_a.direction.dot(port_b.direction) != 0:
             return None
 
         width_options = sorted(port_a.widths & port_b.widths)
@@ -1771,11 +1758,7 @@ class DungeonGenerator:
 
                 port_a = port_a_info["port"]
                 port_b = port_b_info["port"]
-                dot = (
-                    port_a.direction.dx * port_b.direction.dx
-                    + port_a.direction.dy * port_b.direction.dy
-                )
-                if dot != 0:
+                if port_a.direction.dot(port_b.direction) != 0:
                     continue
 
                 common_widths = port_a.widths & port_b.widths

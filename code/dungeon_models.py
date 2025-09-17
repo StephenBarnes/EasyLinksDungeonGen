@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import FrozenSet, List, Optional, Tuple
 
-from dungeon_constants import DOOR_MACRO_ALIGNMENT_OFFSETS, MACRO_GRID_SIZE, VALID_ROTATIONS
+from dungeon_constants import DOOR_MACRO_ALIGNMENT_OFFSETS, MACRO_GRID_SIZE
 from dungeon_geometry import (
     Direction,
     Rotation,
@@ -16,6 +16,7 @@ from dungeon_geometry import (
     port_tiles_from_world_pos,
     rotate_direction,
     rotate_point,
+    VALID_ROTATIONS,
 )
 
 
