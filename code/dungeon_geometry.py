@@ -1,9 +1,60 @@
-"""Geometry helpers for working with ports and rotations."""
+"""Geometry helpers for working with ports, rotations, and rectangles."""
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Tuple
+
+Point = Tuple[float, float]
+
+
+@dataclass(frozen=True)
+class Rect:
+    """Immutable axis-aligned rectangle using integer tile coordinates."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+    @property
+    def max_x(self) -> int:
+        """Right edge (exclusive)."""
+        return self.x + self.width
+
+    @property
+    def max_y(self) -> int:
+        """Bottom edge (exclusive)."""
+        return self.y + self.height
+
+    def overlaps(self, other: Rect) -> bool:
+        """Return True when the interior of this rect intersects another rect."""
+        if self.max_x <= other.x or other.max_x <= self.x:
+            return False
+        if self.max_y <= other.y or other.max_y <= self.y:
+            return False
+        return True
+
+    def expand(self, margin: int) -> Rect:
+        """Return a rect grown outward by ``margin`` tiles on all sides."""
+        if margin == 0:
+            return self
+        return Rect(
+            self.x - margin,
+            self.y - margin,
+            self.width + 2 * margin,
+            self.height + 2 * margin,
+        )
+
+    def contains(self, point: Point) -> bool:
+        """Return True if the provided point lies inside this rect."""
+        px, py = point
+        return self.x <= px < self.max_x and self.y <= py < self.max_y
+
+    def to_tuple(self) -> Tuple[int, int, int, int]:
+        """Return the rect as an ``(x, y, width, height)`` tuple."""
+        return self.x, self.y, self.width, self.height
 
 
 def port_tiles_from_world_pos(world_x: float, world_y: float) -> Tuple[Tuple[int, int], Tuple[int, int]]:

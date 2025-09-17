@@ -8,7 +8,7 @@ from enum import Enum
 from typing import FrozenSet, List, Optional, Tuple
 
 from dungeon_constants import DOOR_MACRO_ALIGNMENT_OFFSETS, MACRO_GRID_SIZE, VALID_ROTATIONS
-from dungeon_geometry import port_tiles_from_world_pos, rotate_direction, rotate_point
+from dungeon_geometry import Rect, port_tiles_from_world_pos, rotate_direction, rotate_point
 
 
 class RoomKind(Enum):
@@ -302,9 +302,9 @@ class PlacedRoom:
             return self.template.size[1]
         return self.template.size[0]
 
-    def get_bounds(self) -> Tuple[int, int, int, int]:
-        """Returns the bounding box as (x, y, width, height)."""
-        return (self.x, self.y, self.width, self.height)
+    def get_bounds(self) -> Rect:
+        """Return the bounding rectangle covering this room's footprint."""
+        return Rect(self.x, self.y, self.width, self.height)
 
     def get_world_ports(self) -> List[WorldPort]:
         """Calculates the real-world positions and directions of ports after rotation."""

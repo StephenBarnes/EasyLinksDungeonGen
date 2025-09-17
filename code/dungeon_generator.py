@@ -76,28 +76,18 @@ class DungeonGenerator:
         self.direct_link_counts_probs = dict(direct_link_counts_probs)
         self._next_component_id = 0
 
-    @staticmethod
-    def _expand_bounds(bounds: Tuple[int, int, int, int], margin: int) -> Tuple[int, int, int, int]:
-        x, y, w, h = bounds
-        return x - margin, y - margin, w + 2 * margin, h + 2 * margin
-
-    @staticmethod
-    def _rects_overlap(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> bool:
-        ax, ay, aw, ah = a
-        bx, by, bw, bh = b
-        if ax + aw <= bx or bx + bw <= ax:
-            return False
-        if ay + ah <= by or by + bh <= ay:
-            return False
-        return True
-
     def _is_in_bounds(self, room: PlacedRoom) -> bool:
-        x, y, w, h = room.get_bounds()
-        return 0 <= x and 0 <= y and x + w <= self.width and y + h <= self.height
+        bounds = room.get_bounds()
+        return (
+            0 <= bounds.x
+            and 0 <= bounds.y
+            and bounds.max_x <= self.width
+            and bounds.max_y <= self.height
+        )
 
     def _rooms_overlap(self, candidate: PlacedRoom, existing: PlacedRoom, margin: int) -> bool:
-        expanded_candidate = self._expand_bounds(candidate.get_bounds(), margin)
-        return self._rects_overlap(expanded_candidate, existing.get_bounds())
+        expanded_candidate = candidate.get_bounds().expand(margin)
+        return expanded_candidate.overlaps(existing.get_bounds())
 
     def _is_valid_room_position(self, new_room: PlacedRoom, anchor_room: Optional[PlacedRoom]) -> bool:
         if not self._is_in_bounds(new_room):
@@ -372,9 +362,9 @@ class DungeonGenerator:
         """Map each room tile to its owning room index for collision checks."""
         tile_to_room: Dict[Tuple[int, int], int] = {}
         for idx, room in enumerate(self.placed_rooms):
-            x, y, w, h = room.get_bounds()
-            for ty in range(y, y + h):
-                for tx in range(x, x + w):
+            bounds = room.get_bounds()
+            for ty in range(bounds.y, bounds.max_y):
+                for tx in range(bounds.x, bounds.max_x):
                     tile_to_room[(tx, ty)] = idx
         return tile_to_room
 
@@ -608,10 +598,10 @@ class DungeonGenerator:
         allowed_tiles: Set[Tuple[int, int]],
         allowed_corridors: Set[int],
     ) -> Tuple[bool, Dict[int, Set[Tuple[int, int]]]]:
-        rx, ry, rw, rh = room.get_bounds()
+        bounds = room.get_bounds()
         overlaps_by_corridor: Dict[int, Set[Tuple[int, int]]] = defaultdict(set)
-        for ty in range(ry, ry + rh):
-            for tx in range(rx, rx + rw):
+        for ty in range(bounds.y, bounds.max_y):
+            for tx in range(bounds.x, bounds.max_x):
                 tile = (tx, ty)
                 if tile not in self.corridor_tiles:
                     continue
@@ -656,11 +646,10 @@ class DungeonGenerator:
 
         start_axis, end_axis = geometry.port_axis_values
         step = 1 if end_axis > start_axis else -1
-        rx, ry, rw, rh = room.get_bounds()
+        bounds = room.get_bounds()
 
         def tile_inside(tile: Tuple[int, int]) -> bool:
-            tx, ty = tile
-            return rx <= tx < rx + rw and ry <= ty < ry + rh
+            return bounds.contains(tile)
 
         grouped: List[Tuple[int, List[Tuple[int, int]]]] = []
         current_axis: Optional[int] = None
@@ -805,10 +794,10 @@ class DungeonGenerator:
 
     def _validate_room_corridor_clearance(self, room_index: int) -> None:
         room = self.placed_rooms[room_index]
-        rx, ry, rw, rh = room.get_bounds()
+        bounds = room.get_bounds()
         overlaps: List[Tuple[Tuple[int, int], List[int]]] = []
-        for ty in range(ry, ry + rh):
-            for tx in range(rx, rx + rw):
+        for ty in range(bounds.y, bounds.max_y):
+            for tx in range(bounds.x, bounds.max_x):
                 tile = (tx, ty)
                 corridors = self.corridor_tile_index.get(tile)
                 if corridors:
@@ -1170,10 +1159,10 @@ class DungeonGenerator:
                             if not self._is_valid_placement(placed_bend):
                                 continue
 
-                            bx, by, bw, bh = placed_bend.get_bounds()
+                            bend_bounds = placed_bend.get_bounds()
                             overlaps_corridor = False
-                            for ty in range(by, by + bh):
-                                for tx in range(bx, bx + bw):
+                            for ty in range(bend_bounds.y, bend_bounds.max_y):
+                                for tx in range(bend_bounds.x, bend_bounds.max_x):
                                     if (tx, ty) in self.corridor_tiles:
                                         overlaps_corridor = True
                                         break
@@ -1183,8 +1172,8 @@ class DungeonGenerator:
                                 continue
 
                             tile_map_with_bend = dict(tile_to_room)
-                            for ty in range(by, by + bh):
-                                for tx in range(bx, bx + bw):
+                            for ty in range(bend_bounds.y, bend_bounds.max_y):
+                                for tx in range(bend_bounds.x, bend_bounds.max_x):
                                     tile_map_with_bend[(tx, ty)] = candidate_room_index
 
                             bend_world_ports = placed_bend.get_world_ports()
@@ -1897,10 +1886,10 @@ class DungeonGenerator:
         # Fill rooms with a character so they are easy to distinguish.
         for room in self.placed_rooms:
             room_char = random.choice('OX/LNMW123456789')
-            x, y, w, h = room.get_bounds()
-            for j in range(h):
-                for i in range(w):
-                    self.grid[y + j][x + i] = room_char
+            bounds = room.get_bounds()
+            for ty in range(bounds.y, bounds.max_y):
+                for tx in range(bounds.x, bounds.max_x):
+                    self.grid[ty][tx] = room_char
         # Draw ports
         for room in self.placed_rooms:
             for port in room.get_world_ports():
@@ -1935,8 +1924,8 @@ class DungeonGenerator:
         """Mark the interior of the specified room_idx with asterisks."""
         room = self.placed_rooms[room_idx]
         bounds = room.get_bounds()
-        for x in range(bounds[0] + 1, bounds[0] + bounds[2] - 1):
-            for y in range(bounds[1] + 1, bounds[1] + bounds[3] - 1):
+        for x in range(bounds.x + 1, bounds.max_x - 1):
+            for y in range(bounds.y + 1, bounds.max_y - 1):
                 self.grid[y][x] = "*"
 
     def print_grid(self, horizontal_sep: str = "") -> None:
