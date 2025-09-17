@@ -40,6 +40,8 @@ class DungeonConfig:
     collect_metrics: bool = False
     max_connected_placement_attempts: int = 40
     max_consecutive_limit_failures: int = 5
+    bent_room_to_corridor_max_room_distance: int = 8
+    bent_room_to_corridor_max_branch_distance: int | None = None
     _door_macro_alignment_offsets: Mapping[Direction, tuple[float, float]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -68,6 +70,17 @@ class DungeonConfig:
         if self.max_parallel_corridor_overlap < 0:
             raise ValueError(
                 "DungeonConfig min_parallel_corridor_overlap must be non-negative"
+            )
+        if self.bent_room_to_corridor_max_room_distance <= 0:
+            raise ValueError(
+                "DungeonConfig bent_room_to_corridor_max_room_distance must be positive"
+            )
+        if (
+            self.bent_room_to_corridor_max_branch_distance is not None
+            and self.bent_room_to_corridor_max_branch_distance <= 0
+        ):
+            raise ValueError(
+                "DungeonConfig bent_room_to_corridor_max_branch_distance must be positive or None"
             )
 
         self.room_templates = tuple(self.room_templates)

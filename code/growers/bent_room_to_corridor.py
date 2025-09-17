@@ -132,7 +132,6 @@ class BentRoomToCorridorGeometryPlanner(
         max_room_distance: int = 8,
         fill_probability: float = 1.0,
         max_branch_distance: Optional[int] = 8,
-        # TODO: add fields for max_branch_distance and max_room_distance to DungeonConfig, and wire them through to here.
     ) -> None:
         self.max_room_distance = max_room_distance
         self.fill_probability = fill_probability
@@ -886,7 +885,11 @@ def _run_bent_room_to_corridor_grower(
     grower = DungeonGrower(
         name=name,
         candidate_finder=BentRoomToCorridorCandidateFinder(),
-        geometry_planner=BentRoomToCorridorGeometryPlanner(fill_probability=fill_probability),
+        geometry_planner=BentRoomToCorridorGeometryPlanner(
+            max_room_distance=context.config.bent_room_to_corridor_max_room_distance,
+            max_branch_distance=context.config.bent_room_to_corridor_max_branch_distance,
+            fill_probability=fill_probability,
+        ),
         applier=BentRoomToCorridorApplier(stop_after_first=stop_after_first),
     )
     return grower.run(context)
