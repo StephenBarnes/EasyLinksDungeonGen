@@ -108,9 +108,35 @@ class BentRoomToCorridorCandidateFinder(
 class BentRoomToCorridorGeometryPlanner(
     GeometryPlanner[BentRoomToCorridorCandidate, BentRoomToCorridorPlan]
 ):
-    def __init__(self, max_room_distance: int = 8, fill_probability: float = 1.0) -> None:
+    @dataclass(frozen=True)
+    class _CorridorProjection:
+        index: int
+        axis_index: int
+        axis_bounds: Tuple[int, int]
+        cross_bounds: Tuple[int, int]
+        spans: Dict[int, Tuple[int, int]]
+
+    @dataclass(frozen=True)
+    class _AxisTranslationTarget:
+        corridor_idx: int
+        branch_length: int
+
+    @dataclass(frozen=True)
+    class _TranslationCandidate:
+        axis_translation: int
+        corridors: Tuple[int, ...]
+        min_branch_length: int
+
+    def __init__(
+        self,
+        max_room_distance: int = 8,
+        fill_probability: float = 1.0,
+        max_branch_distance: Optional[int] = 8,
+        # TODO: add fields for max_branch_distance and max_room_distance to DungeonConfig, and wire them through to here.
+    ) -> None:
         self.max_room_distance = max_room_distance
         self.fill_probability = fill_probability
+        self.max_branch_distance = max_branch_distance
 
     def plan(
         self,
@@ -129,6 +155,7 @@ class BentRoomToCorridorGeometryPlanner(
         if not bend_templates:
             return None
 
+        corridor_projections = self._compute_corridor_projections(context)
         existing_links = set(context.layout.room_corridor_links)
         junction_templates = context.get_room_templates(RoomKind.T_JUNCTION)
 
@@ -140,6 +167,7 @@ class BentRoomToCorridorGeometryPlanner(
                 bend_templates,
                 junction_templates,
                 existing_links,
+                corridor_projections,
             )
             if plan is not None:
                 return plan
@@ -153,6 +181,7 @@ class BentRoomToCorridorGeometryPlanner(
         bend_templates: Sequence[RoomTemplate],
         junction_templates: Sequence[RoomTemplate],
         existing_links: Set[Tuple[int, int]],
+        corridor_projections: Sequence[_CorridorProjection],
     ) -> Optional[BentRoomToCorridorPlan]:
         """Search bend templates/rotations to connect the room at the requested width."""
         room_port = candidate.world_port
@@ -164,9 +193,6 @@ class BentRoomToCorridorGeometryPlanner(
 
         candidate_exit_axis = context.port_exit_axis_value(room_port, axis_index)
         bend_room_index = len(context.layout.placed_rooms)
-
-        distances = list(range(2, self.max_room_distance + 1))
-        random.shuffle(distances)
         perpendicular_dirs = tuple(dir_ for dir_ in Direction if dir_.dot(direction) == 0)
 
         for template in bend_templates:
@@ -192,28 +218,236 @@ class BentRoomToCorridorGeometryPlanner(
                     continue
 
                 for match_idx, match_port in matching_indices:
+                    match_port_exit_base = context.port_exit_axis_value(match_port, axis_index)
                     for branch_idx, branch_port in branch_indices:
-                        plan = self._try_bend_position(
-                            context,
-                            candidate,
-                            width,
-                            template,
-                            rotation,
-                            match_idx,
-                            match_port,
-                            branch_idx,
-                            branch_port,
-                            axis_index,
-                            axis_dir,
-                            candidate_exit_axis,
-                            bend_room_index,
-                            distances,
-                            junction_templates,
-                            existing_links,
+                        perp_translation = self._aligned_translation(
+                            room_port.pos[1] - match_port.pos[1]
+                            if axis_index == 0
+                            else room_port.pos[0] - match_port.pos[0]
                         )
-                        if plan is not None:
-                            return plan
+                        if perp_translation is None:
+                            print(
+                                f"Warning: room template {template.name} resulted in off-grid perp translation"
+                            )
+                            continue
+
+                        branch_axis = 0 if branch_port.direction.dx != 0 else 1
+                        branch_dir = branch_port.direction.dx if branch_axis == 0 else branch_port.direction.dy
+                        if branch_dir == 0:
+                            continue
+
+                        branch_exit_base = context.port_exit_axis_value(branch_port, branch_axis)
+                        branch_exit_axis = branch_exit_base + perp_translation
+
+                        cross_center_base = (
+                            branch_port.pos[1] if branch_axis == 0 else branch_port.pos[0]
+                        )
+                        try:
+                            cross_coords_base = tuple(
+                                context.corridor_cross_coords(cross_center_base, width)
+                            )
+                        except ValueError:
+                            continue
+
+                        axis_candidates = self._collect_axis_translations(
+                            corridor_projections=corridor_projections,
+                            axis_index=axis_index,
+                            axis_dir=axis_dir,
+                            match_port_exit_base=match_port_exit_base,
+                            candidate_exit_axis=candidate_exit_axis,
+                            branch_axis=branch_axis,
+                            branch_dir=branch_dir,
+                            branch_exit_axis=branch_exit_axis,
+                            cross_coords_base=cross_coords_base,
+                        )
+                        if not axis_candidates:
+                            continue
+
+                        for candidate_translation in axis_candidates:
+                            plan = self._try_bend_position(
+                                context,
+                                candidate,
+                                width,
+                                template,
+                                rotation,
+                                match_idx,
+                                match_port,
+                                branch_idx,
+                                branch_port,
+                                axis_index,
+                                axis_dir,
+                                candidate_exit_axis,
+                                match_port_exit_base,
+                                perp_translation,
+                                candidate_translation.axis_translation,
+                                candidate_translation.corridors,
+                                bend_room_index,
+                                junction_templates,
+                                existing_links,
+                            )
+                            if plan is not None:
+                                return plan
         return None
+
+    @staticmethod
+    def _aligned_translation(value: float) -> Optional[int]:
+        """Snap a floating-point offset to the grid; reject off-grid results."""
+        if not math.isclose(value, round(value), abs_tol=1e-6):
+            return None
+        return int(round(value))
+
+    def _compute_corridor_projections(
+        self, context: GrowerContext
+    ) -> List[_CorridorProjection]:
+        projections: List[BentRoomToCorridorGeometryPlanner._CorridorProjection] = []
+        for idx, corridor in enumerate(context.layout.corridors):
+            geometry = corridor.geometry
+            axis_index = geometry.axis_index
+            if axis_index is None:
+                continue
+            spans: Dict[int, Tuple[int, int]] = {}
+            for tile in geometry.tiles:
+                cross_value = tile.y if axis_index == 0 else tile.x
+                axis_value = tile.x if axis_index == 0 else tile.y
+                current = spans.get(cross_value)
+                if current is None:
+                    spans[cross_value] = (axis_value, axis_value)
+                else:
+                    spans[cross_value] = (
+                        min(current[0], axis_value),
+                        max(current[1], axis_value),
+                    )
+            if not spans:
+                continue
+            cross_bounds = (min(spans.keys()), max(spans.keys()))
+            axis_bounds = (
+                min(span[0] for span in spans.values()),
+                max(span[1] for span in spans.values()),
+            )
+            projections.append(
+                self._CorridorProjection(
+                    index=idx,
+                    axis_index=axis_index,
+                    axis_bounds=axis_bounds,
+                    cross_bounds=cross_bounds,
+                    spans=spans,
+                )
+            )
+        return projections
+
+    def _axis_translation_bounds_from_distance(
+        self,
+        axis_dir: int,
+        candidate_exit_axis: int,
+        match_port_exit_base: int,
+    ) -> Optional[Tuple[int, int]]:
+        if axis_dir == 0 or self.max_room_distance < 2:
+            return None
+        if axis_dir > 0:
+            desired_min = candidate_exit_axis + 2
+            desired_max = candidate_exit_axis + self.max_room_distance
+        else:
+            desired_min = candidate_exit_axis - self.max_room_distance
+            desired_max = candidate_exit_axis - 2
+        translation_min = desired_min - match_port_exit_base
+        translation_max = desired_max - match_port_exit_base
+        if translation_min > translation_max:
+            translation_min, translation_max = translation_max, translation_min
+        return translation_min, translation_max
+
+    def _collect_axis_translations(
+        self,
+        *,
+        corridor_projections: Sequence[_CorridorProjection],
+        axis_index: int,
+        axis_dir: int,
+        match_port_exit_base: int,
+        candidate_exit_axis: int,
+        branch_axis: int,
+        branch_dir: int,
+        branch_exit_axis: int,
+        cross_coords_base: Tuple[int, ...],
+    ) -> List[_TranslationCandidate]:
+        if not cross_coords_base or branch_dir == 0:
+            return []
+
+        bounds = self._axis_translation_bounds_from_distance(
+            axis_dir, candidate_exit_axis, match_port_exit_base
+        )
+        if bounds is None:
+            return []
+        distance_min, distance_max = bounds
+
+        cross_coords_base = tuple(sorted(cross_coords_base))
+        cross_min = cross_coords_base[0]
+        cross_max = cross_coords_base[-1]
+
+        translations: Dict[int, List[BentRoomToCorridorGeometryPlanner._AxisTranslationTarget]] = {}
+
+        for projection in corridor_projections:
+            if projection.axis_index == branch_axis:
+                continue
+            for cross_value, axis_span in projection.spans.items():
+                if branch_dir < 0:
+                    if cross_value >= branch_exit_axis:
+                        continue
+                else:
+                    if cross_value <= branch_exit_axis:
+                        continue
+
+                branch_length = abs(cross_value - branch_exit_axis)
+                if branch_length == 0:
+                    continue
+                if (
+                    self.max_branch_distance is not None
+                    and branch_length > self.max_branch_distance
+                ):
+                    continue
+
+                translation_min = axis_span[0] - cross_min
+                translation_max = axis_span[1] - cross_max
+                if translation_min > translation_max:
+                    continue
+                translation_min = max(translation_min, distance_min)
+                translation_max = min(translation_max, distance_max)
+                if translation_min > translation_max:
+                    continue
+
+                for translation in range(translation_min, translation_max + 1):
+                    translations.setdefault(translation, []).append(
+                        self._AxisTranslationTarget(projection.index, branch_length)
+                    )
+
+        if not translations:
+            return []
+
+        candidates: List[BentRoomToCorridorGeometryPlanner._TranslationCandidate] = []
+        for translation, targets in translations.items():
+            dedup: Dict[int, BentRoomToCorridorGeometryPlanner._AxisTranslationTarget] = {}
+            for target in targets:
+                current = dedup.get(target.corridor_idx)
+                if current is None or target.branch_length < current.branch_length:
+                    dedup[target.corridor_idx] = target
+            corridors = tuple(sorted(dedup.keys()))
+            min_branch_length = min(target.branch_length for target in dedup.values())
+            candidates.append(
+                self._TranslationCandidate(
+                    axis_translation=translation,
+                    corridors=corridors,
+                    min_branch_length=min_branch_length,
+                )
+            )
+
+        candidates.sort(key=lambda c: c.min_branch_length)
+        start = 0
+        while start < len(candidates):
+            end = start + 1
+            while end < len(candidates) and candidates[end].min_branch_length == candidates[start].min_branch_length:
+                end += 1
+            if end - start > 1:
+                random.shuffle(candidates[start:end])
+            start = end
+        return candidates
 
     def _try_bend_position(
         self,
@@ -229,112 +463,95 @@ class BentRoomToCorridorGeometryPlanner(
         axis_index: int,
         axis_dir: int,
         candidate_exit_axis: int,
+        match_port_exit_base: int,
+        perp_translation: int,
+        axis_translation: int,
+        corridor_targets: Tuple[int, ...],
         bend_room_index: int,
-        distances: Sequence[int],
         junction_templates: Sequence[RoomTemplate],
         existing_links: Set[Tuple[int, int]],
     ) -> Optional[BentRoomToCorridorPlan]:
         """Place the bend room and build corridors if the spatial layout permits it."""
         room_port = candidate.world_port
 
-        def aligned_translation(value: float) -> Optional[int]:
-            """Snap a floating-point offset to the grid; reject off-grid results."""
-            if not math.isclose(value, round(value), abs_tol=1e-6):
-                return None
-            return int(round(value))
-
-        # Align the bend room on the perpendicular axis so that the connecting ports share a cross coordinate.
-        if axis_index == 0:
-            perp_translation_value = room_port.pos[1] - match_port.pos[1]
-        else:
-            perp_translation_value = room_port.pos[0] - match_port.pos[0]
-        perp_translation = aligned_translation(perp_translation_value)
-        if perp_translation is None:
-            print(f"Warning: room template {template.name} resulted in off-grid perp translation")
+        desired_exit = match_port_exit_base + axis_translation
+        distance = axis_dir * (desired_exit - candidate_exit_axis)
+        if distance < 2 or distance > self.max_room_distance:
             return None
 
-        match_port_exit_base = context.port_exit_axis_value(match_port, axis_index)
+        if axis_index == 0:
+            tx, ty = axis_translation, perp_translation
+        else:
+            tx, ty = perp_translation, axis_translation
 
-        for distance in distances:
-            desired_exit = candidate_exit_axis + axis_dir * distance
-            translation_axis_value = desired_exit - match_port_exit_base
-            axis_translation = aligned_translation(translation_axis_value)
-            if axis_translation is None:
-                continue
+        placed_bend = PlacedRoom(template, tx, ty, rotation)
+        if not context.layout.is_valid_placement(placed_bend):
+            return None
 
-            if axis_index == 0:
-                tx, ty = axis_translation, perp_translation
-            else:
-                tx, ty = perp_translation, axis_translation
-
-            placed_bend = PlacedRoom(template, tx, ty, rotation)
-            if not context.layout.is_valid_placement(placed_bend):
-                continue
-
-            bounds = placed_bend.get_bounds()
-            extra_room_tiles: Dict[TilePos, int] = {}
-            overlaps_corridor = False
-            for ty_tile in range(bounds.y, bounds.max_y):
-                for tx_tile in range(bounds.x, bounds.max_x):
-                    tile = TilePos(tx_tile, ty_tile)
-                    if context.layout.spatial_index.has_corridor_at(tile):
-                        overlaps_corridor = True
-                        break
-                    extra_room_tiles[tile] = bend_room_index
-                if overlaps_corridor:
+        bounds = placed_bend.get_bounds()
+        extra_room_tiles: Dict[TilePos, int] = {}
+        overlaps_corridor = False
+        for ty_tile in range(bounds.y, bounds.max_y):
+            for tx_tile in range(bounds.x, bounds.max_x):
+                tile = TilePos(tx_tile, ty_tile)
+                if context.layout.spatial_index.has_corridor_at(tile):
+                    overlaps_corridor = True
                     break
+                extra_room_tiles[tile] = bend_room_index
             if overlaps_corridor:
-                continue
+                break
+        if overlaps_corridor:
+            return None
 
-            bend_world_ports = placed_bend.get_world_ports()
-            bend_match_port = bend_world_ports[match_idx]
-            bend_branch_port = bend_world_ports[branch_idx]
-            if width not in bend_match_port.widths or width not in bend_branch_port.widths:
-                continue
+        bend_world_ports = placed_bend.get_world_ports()
+        bend_match_port = bend_world_ports[match_idx]
+        bend_branch_port = bend_world_ports[branch_idx]
+        if width not in bend_match_port.widths or width not in bend_branch_port.widths:
+            return None
 
-            geometry_room_to_bend = context.build_corridor_geometry(
-                candidate.room_idx,
-                room_port,
-                bend_room_index,
-                bend_match_port,
-                width,
-                extra_room_tiles,
-            )
-            if geometry_room_to_bend is None:
-                continue
-            if any(context.layout.spatial_index.has_corridor_at(tile) for tile in geometry_room_to_bend.tiles):
-                continue
+        geometry_room_to_bend = context.build_corridor_geometry(
+            candidate.room_idx,
+            room_port,
+            bend_room_index,
+            bend_match_port,
+            width,
+            extra_room_tiles,
+        )
+        if geometry_room_to_bend is None:
+            return None
+        if any(context.layout.spatial_index.has_corridor_at(tile) for tile in geometry_room_to_bend.tiles):
+            return None
 
-            branch_plan = self._build_branch_plan(
-                context,
-                candidate,
-                width,
-                bend_room_index,
-                branch_idx,
-                bend_branch_port,
-                geometry_room_to_bend,
-                extra_room_tiles,
-                junction_templates,
-                existing_links,
-            )
-            if branch_plan is None:
-                continue
+        branch_plan = self._build_branch_plan(
+            context,
+            candidate,
+            width,
+            bend_room_index,
+            branch_idx,
+            bend_branch_port,
+            geometry_room_to_bend,
+            extra_room_tiles,
+            junction_templates,
+            existing_links,
+            corridor_targets,
+        )
+        if branch_plan is None:
+            return None
 
-            return BentRoomToCorridorPlan(
-                width=width,
-                bend_room=placed_bend,
-                bend_room_port_idx=match_idx,
-                bend_branch_port_idx=branch_idx,
-                room_to_bend_geometry=geometry_room_to_bend,
-                branch_geometry=branch_plan.branch_geometry,
-                target_corridor_idx=branch_plan.target_corridor_idx,
-                branch_requirement_idx=branch_plan.branch_requirement_idx,
-                requirements=branch_plan.requirements,
-                requirement_mapping=branch_plan.requirement_mapping,
-                port_mapping=branch_plan.port_mapping,
-                junction_room=branch_plan.junction_room,
-            )
-        return None
+        return BentRoomToCorridorPlan(
+            width=width,
+            bend_room=placed_bend,
+            bend_room_port_idx=match_idx,
+            bend_branch_port_idx=branch_idx,
+            room_to_bend_geometry=geometry_room_to_bend,
+            branch_geometry=branch_plan.branch_geometry,
+            target_corridor_idx=branch_plan.target_corridor_idx,
+            branch_requirement_idx=branch_plan.branch_requirement_idx,
+            requirements=branch_plan.requirements,
+            requirement_mapping=branch_plan.requirement_mapping,
+            port_mapping=branch_plan.port_mapping,
+            junction_room=branch_plan.junction_room,
+        )
 
     @dataclass(frozen=True)
     class _BranchPlan:
@@ -391,12 +608,16 @@ class BentRoomToCorridorGeometryPlanner(
         extra_room_tiles: Dict[TilePos, int],
         junction_templates: Sequence[RoomTemplate],
         existing_links: Set[Tuple[int, int]],
+        corridor_targets: Tuple[int, ...],
     ) -> Optional[_BranchPlan]:
         """Attach the bend to a corridor by inserting a T-junction and constraints."""
+        target_corridors = set(corridor_targets) if corridor_targets else None
         branch_result = context.build_t_junction_geometry(
             bend_room_index,
             bend_branch_port,
             width,
+            target_corridor_indices=target_corridors,
+            max_axis_distance=self.max_branch_distance,
         )
         if branch_result is None:
             return None

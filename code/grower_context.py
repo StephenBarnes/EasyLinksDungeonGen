@@ -728,6 +728,9 @@ class GrowerContext:
         room_index: int,
         port: WorldPort,
         width: int,
+        *,
+        target_corridor_indices: Optional[Set[int]] = None,
+        max_axis_distance: Optional[int] = None,
     ) -> Optional[Tuple[CorridorGeometry, int, Tuple[TilePos, ...]]]:
         axis_index = 0 if port.direction.dx != 0 else 1
         direction = port.direction.dx if axis_index == 0 else port.direction.dy
@@ -743,7 +746,12 @@ class GrowerContext:
 
         axis_value = exit_axis_value
         path_tiles: List[TilePos] = []
-        max_steps = max(self.config.width, self.config.height) + 1
+        max_steps_default = max(self.config.width, self.config.height) + 1
+        max_steps = (
+            min(max_axis_distance, max_steps_default)
+            if max_axis_distance is not None
+            else max_steps_default
+        )
         steps = 0
 
         while True:
@@ -772,6 +780,9 @@ class GrowerContext:
                         intersecting_indices &= indices
                     if not intersecting_indices:
                         break
+
+                if target_corridor_indices is not None and intersecting_indices is not None:
+                    intersecting_indices &= target_corridor_indices
 
                 if not intersecting_indices:
                     return None
