@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterable, Iterator, List, Optional, Set, Tuple
 
-from dungeon_models import Corridor, CorridorGeometry, PlacedRoom, WorldPort
+from models import Corridor, CorridorGeometry, PlacedRoom, WorldPort
 
 from growers.base import (
     CandidateFinder,

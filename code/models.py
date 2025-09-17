@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import FrozenSet, List, Optional, Tuple
 
-from dungeon_constants import door_macro_alignment_offsets
-from dungeon_geometry import (
+from constants import door_macro_alignment_offsets
+from geometry import (
     Direction,
     Rotation,
     Rect,
@@ -25,7 +25,7 @@ class RoomKind(Enum):
     STANDALONE = 0 # Created by step 1, either placed as a root or created directly linked to existing room.
     T_JUNCTION = 1 # Connects 2 corridors/rooms in line with each other, plus a third corridor/room perpendicular.
     BEND = 2 # Connects to 2 passages/rooms at right angles.
-    FOUR_WAY = 3 # Connects to 4 passages, or poss
+    FOUR_WAY = 3 # Connects to 4 passages or room ports.
 
 
 @dataclass

@@ -6,8 +6,8 @@ import random
 
 from dungeon_config import DungeonConfig
 from dungeon_generator import DungeonGenerator
-from dungeon_models import PortTemplate, RoomTemplate, RoomKind
-from dungeon_geometry import Direction
+from models import PortTemplate, RoomTemplate, RoomKind
+from geometry import Direction
 
 
 def build_default_room_templates() -> list[RoomTemplate]:

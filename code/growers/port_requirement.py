@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from dungeon_geometry import Direction, TilePos
-from dungeon_models import CorridorGeometry
+from geometry import Direction, TilePos
+from models import CorridorGeometry
 
 
 @dataclass(frozen=True)

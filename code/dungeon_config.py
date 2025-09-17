@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
-from dungeon_constants import door_macro_alignment_offsets
-from dungeon_geometry import Direction
-from dungeon_models import RoomTemplate
+from constants import door_macro_alignment_offsets
+from geometry import Direction
+from models import RoomTemplate
 
 
 @dataclass

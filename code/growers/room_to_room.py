@@ -4,8 +4,8 @@ import random
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
-from dungeon_geometry import TilePos
-from dungeon_models import Corridor, CorridorGeometry, PlacedRoom, WorldPort
+from geometry import TilePos
+from models import Corridor, CorridorGeometry, PlacedRoom, WorldPort
 
 from growers.base import (
     CandidateFinder,

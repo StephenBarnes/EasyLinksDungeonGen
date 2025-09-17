@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from typing import Dict, Optional, Set, Tuple
 
-from dungeon_geometry import Rect, TilePos
-from dungeon_models import PlacedRoom
+from geometry import Rect, TilePos
+from models import PlacedRoom
 
 
 class SpatialIndex:

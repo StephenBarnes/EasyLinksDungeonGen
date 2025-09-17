@@ -1,4 +1,4 @@
-"""DungeonGenerator orchestrates the three implemented algorithm steps."""
+"""DungeonGenerator orchestrates the three steps of the easylink algorithm."""
 
 from __future__ import annotations
 
@@ -6,13 +6,12 @@ import math
 import random
 import itertools
 from collections import defaultdict
-from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from component_manager import ComponentManager
 from dungeon_config import DungeonConfig
-from dungeon_geometry import Direction, Rotation, TilePos, rotate_direction, VALID_ROTATIONS
-from dungeon_models import RoomKind, Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
+from geometry import Direction, Rotation, TilePos, rotate_direction, VALID_ROTATIONS
+from models import RoomKind, Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
 from growers import (
     run_bent_room_to_room_grower,
     run_room_to_corridor_grower,
@@ -361,7 +360,7 @@ class DungeonGenerator:
         return None
 
     def _spawn_direct_links_recursive(self, from_room: PlacedRoom) -> int:
-        """Recursively try to place 0-2 directly-connected rooms from from_room."""
+        """Recursively try to place directly-connected rooms from from_room."""
         rooms_placed = 0
         n = self._sample_num_direct_links()
         for _ in range(n):

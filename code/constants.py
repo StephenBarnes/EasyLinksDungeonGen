@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dungeon_geometry import Direction
+from geometry import Direction
 
 
 def door_macro_alignment_offsets(macro_grid_size: int) -> dict[Direction, tuple[float, float]]:
