@@ -62,10 +62,6 @@ class DungeonGenerator:
         
         # Additional growers will be invoked here, then step 3.
 
-    def get_component_summary(self) -> Dict[int, Dict[str, List[int]]]:
-        """Return indices of rooms and corridors grouped by component id."""
-        return self.layout.get_component_summary()
-
     def _random_macro_grid_point(self) -> Tuple[int, int]:
         max_macro_x = (self.config.width // self.config.macro_grid_size) - 1
         max_macro_y = (self.config.height // self.config.macro_grid_size) - 1
