@@ -19,23 +19,21 @@ Refactoring suggestion: Create a `JunctionFitter` class.
 * It could be broken down further internally: a method to check a single template/rotation pair, a method to calculate the required translation, etc.
 * This isolates the hardest part of the algorithm into one place.
 
-### Abstract the linking pattern
+### Abstract the dungeon-grower pattern
 
-The methods `create_easy_links`, `create_easy_t_junctions`, `create_bent_room_links` share a similar structure:
+The methods `grower_room_to_room`, `grower_room_to_corridor`, `grower_bent_room_to_room` share a similar structure:
 
 * Find candidate connection points (port-to-port, port-to-corridor).
 * For each candidate, check for geometric validity.
 * If valid, plan the new geometry (corridor, junction room).
 * If planned successfully, register the new objects and merge components.
 
-Refactoring suggestion: abstract this pattern.
+We want to abstract this pattern, by creating a generic `DungeonGrower` that takes a `CandidateFinder`, a `GeometryPlanner`, and an `Applier`.
 
-We could create a generic "`GeometryBuilder`" that takes a `CandidateFinder`, a `GeometryPlanner`, and an `Applier`.
+* For `grow_room_to_room`, the `CandidateFinder` would yield pairs of opposing ports.
+* For `grow_room_to_corridor`, it would yield pairs of (port, corridor).
 
-* For `create_easy_links`, the `CandidateFinder` would yield pairs of opposing ports.
-* For `create_easy_t_junctions`, it would yield pairs of (port, corridor).
-
-Recognizing the shared pattern is key. We might want to add more geometry creators in the future, which will share a similar structure; for example, we're planning to add a feature later that will find long straight corridors and consider splitting them up by placing a 2-door room template in the middle.
+Recognizing the shared pattern is key. We want to add more dungeon growers in the future, which will share a similar structure; for example, we're planning to add a feature later that will find long straight corridors and consider splitting them up by placing a 2-door room template in the middle.
 
 ### Corridor geometry logic
 
