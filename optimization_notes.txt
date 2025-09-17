@@ -267,5 +267,52 @@ Grower performance summary:
   through_corridor: invocations=41, total_time=423.4ms, avg_time=10.3ms, avg_rooms=12.12, avg_corridors=12.12
   rotate_rooms: invocations=9, total_time=1.0ms, avg_time=0.1ms, avg_rooms=0.00, avg_corridors=0.00
 
-Notes: So setting the max branch distance to 8 (instead of None) roughly halved the runtime, to the point where total time of bent_room_to_room is only 50% of the total runtime, down from 81% for the first big benchmark (before optimizations), and down from 75% after the rotation-precomputation optimization (which reduced total runtime by 40%).
+Notes: So setting the max branch distance to 8 (instead of None) roughly halved the runtime, to the point where total time of bent_room_to_corridor is only 14% of the total runtime, down from 81% for the first big benchmark (before optimizations), and down from 75% after the rotation-precomputation optimization (which reduced total runtime by 40%).
 Overall, optimizations so far have reduced mean generation time from 57 seconds to 13.5 seconds.
+
+========================================================================
+
+Benchmark big, after adding code to track which corridors/rooms have already been seen by each grower and don't need to be considered again:
+
+Run 01: 8.768s (seed 378734) | largest component 100.0% | diversity 0.368
+Run 02: 6.641s (seed 464410) | largest component 100.0% | diversity 0.438
+Run 03: 11.757s (seed 398771) | largest component 100.0% | diversity 0.432
+Run 04: 6.939s (seed 987478) | largest component 100.0% | diversity 0.327
+Run 05: 23.718s (seed 311286) | largest component 100.0% | diversity 0.363
+
+Config runs: 5
+Mean generation time: 11.564s
+Median generation time: 8.768s
+Worst-case generation time: 23.718s (seed 311286)
+Largest connected component: mean 100.0%, median 100.0%, success rate 100.0% for threshold 80.0%
+Room diversity (1 - Gini): mean 0.385, median 0.368, p5 0.334, success rate 40.0% for threshold 0.400
+
+Room template distribution across runs:
+  room_8x6_2doors: 379 rooms (38.7% of 980 total rooms)
+  room_8x8_4doors: 206 rooms (21.0% of 980 total rooms)
+  junction_4x4_3doors: 90 rooms (9.2% of 980 total rooms)
+  junction_2x4: 56 rooms (5.7% of 980 total rooms)
+  room_6x6_90deg: 52 rooms (5.3% of 980 total rooms)
+  room_8x10_5doors: 51 rooms (5.2% of 980 total rooms)
+  room_6x4_deadend: 44 rooms (4.5% of 980 total rooms)
+  junction_4x4: 28 rooms (2.9% of 980 total rooms)
+  junction_2x2: 24 rooms (2.4% of 980 total rooms)
+  bend_2x4_left: 13 rooms (1.3% of 980 total rooms)
+  bend_2x2_left: 11 rooms (1.1% of 980 total rooms)
+  bend_2x2_right: 10 rooms (1.0% of 980 total rooms)
+  bend_2x4_right: 6 rooms (0.6% of 980 total rooms)
+  bend_4x4_right: 6 rooms (0.6% of 980 total rooms)
+  bend_4x4_left: 4 rooms (0.4% of 980 total rooms)
+
+Grower performance summary:
+  room_to_room: invocations=211, total_time=30.271s, avg_time=143.5ms, avg_rooms=0.02, avg_corridors=0.18
+  bent_room_to_corridor: invocations=98, total_time=21.881s, avg_time=223.3ms, avg_rooms=1.06, avg_corridors=1.59
+  room_to_corridor: invocations=165, total_time=2.959s, avg_time=17.9ms, avg_rooms=0.86, avg_corridors=1.72
+  bent_room_to_room: invocations=69, total_time=2.172s, avg_time=31.5ms, avg_rooms=0.33, avg_corridors=0.67
+  through_corridor: invocations=40, total_time=489.7ms, avg_time=12.2ms, avg_rooms=11.38, avg_corridors=11.38
+  rotate_rooms: invocations=5, total_time=0.2ms, avg_time=0.0ms, avg_rooms=0.00, avg_corridors=0.00
+
+Notes: This caused around 30% speedup, despite greatly reducing runtime for bent-room-to-room by >90%. It also increased runtime of bent_room_to_corridor.
+Also, currently room-to-room is taking up more than half of the total runtime, which is bizarre since it's the simplest grower.
+Ran it again to confirm - room-to-room is now taking up the most time, bent-room-to-corridor is worse than before.
+	Probably because it runs more frequently than most of them? But it also rarely creates any corridors, so it shouldn't be invalidating corridors very often.

@@ -8,6 +8,7 @@ from geometry import TilePos
 from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, RoomTemplate
 
 from growers.base import (
+    CandidateDependencies,
     CandidateFinder,
     DungeonGrower,
     GeometryPlanner,
@@ -89,6 +90,15 @@ class ThroughCorridorCandidateFinder(
             yield from candidates
 
         return iterator()
+
+    def dependencies(
+        self,
+        context: GrowerContext,
+        candidate: ThroughCorridorCandidate,
+    ) -> CandidateDependencies:
+        return CandidateDependencies.from_iterables(
+            corridors=(candidate.corridor_idx,)
+        )
 
 
 class ThroughCorridorGeometryPlanner(
@@ -191,6 +201,16 @@ class ThroughCorridorGeometryPlanner(
             junction_room=placed_room,
         )
 
+    def dependencies(
+        self,
+        context: GrowerContext,
+        candidate: ThroughCorridorCandidate,
+        plan: ThroughCorridorPlan,
+    ) -> CandidateDependencies:
+        return CandidateDependencies.from_iterables(
+            corridors=(plan.corridor_idx,)
+        )
+
 
 class ThroughCorridorApplier(GrowerApplier[ThroughCorridorCandidate, ThroughCorridorPlan]):
     def __init__(self) -> None:
@@ -215,6 +235,8 @@ class ThroughCorridorApplier(GrowerApplier[ThroughCorridorCandidate, ThroughCorr
         for room_idx in (corridor.room_a_index, corridor.room_b_index):
             if room_idx is not None:
                 context.layout.set_room_component(room_idx, component_id)
+
+        context.invalidate_corridor_index(corridor_idx)
 
         junction_room_index = len(context.layout.placed_rooms)
         context.layout.register_room(plan.junction_room, component_id)

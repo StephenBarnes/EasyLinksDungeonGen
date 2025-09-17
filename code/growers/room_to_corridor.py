@@ -8,6 +8,7 @@ from geometry import TilePos
 from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, WorldPort
 
 from growers.base import (
+    CandidateDependencies,
     CandidateFinder,
     DungeonGrower,
     GeometryPlanner,
@@ -68,6 +69,13 @@ class RoomToCorridorCandidateFinder(CandidateFinder[RoomToCorridorCandidate, Roo
         plan: RoomToCorridorPlan,
     ) -> None:
         self._used_ports.add((candidate.room_idx, candidate.port_idx))
+
+    def dependencies(
+        self,
+        context: GrowerContext,
+        candidate: RoomToCorridorCandidate,
+    ) -> CandidateDependencies:
+        return CandidateDependencies.from_iterables(rooms=(candidate.room_idx,))
 
 
 class RoomToCorridorGeometryPlanner(GeometryPlanner[RoomToCorridorCandidate, RoomToCorridorPlan]):
@@ -228,6 +236,16 @@ class RoomToCorridorGeometryPlanner(GeometryPlanner[RoomToCorridorCandidate, Roo
             junction_room=placed_room,
         )
 
+    def dependencies(
+        self,
+        context: GrowerContext,
+        candidate: RoomToCorridorCandidate,
+        plan: RoomToCorridorPlan,
+    ) -> CandidateDependencies:
+        return CandidateDependencies.from_iterables(
+            corridors=(plan.target_corridor_idx,)
+        )
+
 
 class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorridorPlan]):
     def __init__(self) -> None:
@@ -246,6 +264,8 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
         )
         context.layout.set_room_component(candidate.room_idx, component_id)
         context.layout.set_corridor_component(plan.target_corridor_idx, component_id)
+
+        context.invalidate_corridor_index(plan.target_corridor_idx)
 
         junction_room_index = len(context.layout.placed_rooms)
         context.layout.register_room(plan.junction_room, component_id)

@@ -8,6 +8,7 @@ from geometry import TilePos
 from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, WorldPort
 
 from growers.base import (
+    CandidateDependencies,
     CandidateFinder,
     DungeonGrower,
     GeometryPlanner,
@@ -116,6 +117,15 @@ class RoomToRoomCandidateFinder(CandidateFinder[RoomToRoomCandidate, RoomToRoomP
         self._used_ports.add((candidate.room_a_idx, candidate.port_a_idx))
         self._used_ports.add((candidate.room_b_idx, candidate.port_b_idx))
         self._connected_pairs.add(candidate.room_pair)
+
+    def dependencies(
+        self,
+        context: GrowerContext,
+        candidate: RoomToRoomCandidate,
+    ) -> CandidateDependencies:
+        return CandidateDependencies.from_iterables(
+            rooms=(candidate.room_a_idx, candidate.room_b_idx)
+        )
 
 
 class RoomToRoomGeometryPlanner(GeometryPlanner[RoomToRoomCandidate, RoomToRoomPlan]):
@@ -295,6 +305,18 @@ class RoomToRoomGeometryPlanner(GeometryPlanner[RoomToRoomCandidate, RoomToRoomP
             existing_corridor_idx=existing_idx,
         )
 
+    def dependencies(
+        self,
+        context: GrowerContext,
+        candidate: RoomToRoomCandidate,
+        plan: RoomToRoomPlan,
+    ) -> CandidateDependencies:
+        if isinstance(plan, IntersectionRoomConnectionPlan):
+            return CandidateDependencies.from_iterables(
+                corridors=(plan.existing_corridor_idx,)
+            )
+        return CandidateDependencies()
+
 
 class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
     def __init__(self) -> None:
@@ -338,6 +360,8 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
             context.layout.set_room_component(candidate.room_a_idx, component_id)
             context.layout.set_room_component(candidate.room_b_idx, component_id)
             context.layout.set_corridor_component(plan.existing_corridor_idx, component_id)
+
+            context.invalidate_corridor_index(plan.existing_corridor_idx)
 
             junction_room_index = len(context.layout.placed_rooms)
             context.layout.register_room(plan.junction_room, component_id)

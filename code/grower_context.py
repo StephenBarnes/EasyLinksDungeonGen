@@ -23,13 +23,47 @@ class GrowerSeenState:
     seen_rooms: Set[int] = field(default_factory=set)
     seen_corridors: Set[int] = field(default_factory=set)
     run_count: int = 0
+    known_room_count: int = 0
+    known_corridor_count: int = 0
 
     def note_seen(self, room_indices: Iterable[int], corridor_indices: Iterable[int]) -> None:
         self.seen_rooms.update(idx for idx in room_indices if idx is not None)
         self.seen_corridors.update(idx for idx in corridor_indices if idx is not None)
 
-    def register_run(self) -> None:
+    def register_run(self, layout: DungeonLayout) -> None:
         self.run_count += 1
+        self.known_room_count = max(self.known_room_count, len(layout.placed_rooms))
+        self.known_corridor_count = max(self.known_corridor_count, len(layout.corridors))
+
+    def should_consider(
+        self,
+        layout: DungeonLayout,
+        room_indices: Iterable[int],
+        corridor_indices: Iterable[int],
+    ) -> bool:
+        rooms = [idx for idx in room_indices if idx is not None]
+        corridors = [idx for idx in corridor_indices if idx is not None]
+        if any(idx not in self.seen_rooms for idx in rooms):
+            return True
+        if any(idx not in self.seen_corridors for idx in corridors):
+            return True
+        if len(layout.placed_rooms) > self.known_room_count:
+            return True
+        if len(layout.corridors) > self.known_corridor_count:
+            return True
+        return False
+
+    def invalidate_rooms(self, indices: Iterable[int]) -> None:
+        for idx in indices:
+            if idx is None:
+                continue
+            self.seen_rooms.discard(idx)
+
+    def invalidate_corridors(self, indices: Iterable[int]) -> None:
+        for idx in indices:
+            if idx is None:
+                continue
+            self.seen_corridors.discard(idx)
 
 
 @dataclass
@@ -44,6 +78,34 @@ class GrowerContext:
 
     def get_grower_seen_state(self, grower_name: str) -> GrowerSeenState:
         return self.grower_seen_state.setdefault(grower_name, GrowerSeenState())
+
+    def should_consider_growth(
+        self,
+        grower_name: str,
+        *,
+        rooms: Iterable[int] = (),
+        corridors: Iterable[int] = (),
+    ) -> bool:
+        state = self.get_grower_seen_state(grower_name)
+        return state.should_consider(self.layout, rooms, corridors)
+
+    def record_growth_seen(
+        self,
+        grower_name: str,
+        *,
+        rooms: Iterable[int] = (),
+        corridors: Iterable[int] = (),
+    ) -> None:
+        state = self.get_grower_seen_state(grower_name)
+        state.note_seen(rooms, corridors)
+
+    def invalidate_room_index(self, room_idx: int) -> None:
+        for state in self.grower_seen_state.values():
+            state.invalidate_rooms((room_idx,))
+
+    def invalidate_corridor_index(self, corridor_idx: int) -> None:
+        for state in self.grower_seen_state.values():
+            state.invalidate_corridors((corridor_idx,))
 
     def get_room_templates(self, kind: RoomKind) -> Sequence[RoomTemplate]:
         """Return templates registered for the requested room kind."""

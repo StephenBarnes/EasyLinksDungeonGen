@@ -30,6 +30,7 @@ from geometry import TilePos
 from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, WorldPort
 
 from growers.base import (
+    CandidateDependencies,
     CandidateFinder,
     DungeonGrower,
     GeometryPlanner,
@@ -134,6 +135,15 @@ class BentRoomCandidateFinder(CandidateFinder[BentRoomCandidate, BentRoomPlan]):
     ) -> None:
         self._used_ports.add((candidate.room_a_idx, candidate.port_a_idx))
         self._used_ports.add((candidate.room_b_idx, candidate.port_b_idx))
+
+    def dependencies(
+        self,
+        context: GrowerContext,
+        candidate: BentRoomCandidate,
+    ) -> CandidateDependencies:
+        return CandidateDependencies.from_iterables(
+            rooms=(candidate.room_a_idx, candidate.room_b_idx)
+        )
 
 
 class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):

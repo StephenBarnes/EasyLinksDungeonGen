@@ -6,6 +6,7 @@ from typing import Iterable, List, Tuple, TYPE_CHECKING
 
 from geometry import Rect, Rotation
 from growers.base import (
+    CandidateDependencies,
     CandidateFinder,
     DungeonGrower,
     GeometryPlanner,
@@ -70,6 +71,13 @@ class RotateRoomCandidateFinder(CandidateFinder[RotateRoomCandidate, RotateRoomP
         random.shuffle(candidates)
         return candidates
 
+    def dependencies(
+        self,
+        context: GrowerContext,
+        candidate: RotateRoomCandidate,
+    ) -> CandidateDependencies:
+        return CandidateDependencies.from_iterables(rooms=(candidate.room_index,))
+
 
 class RotateRoomGeometryPlanner(GeometryPlanner[RotateRoomCandidate, RotateRoomPlan]):
     def plan(
@@ -132,6 +140,7 @@ class RotateRoomApplier(GrowerApplier[RotateRoomCandidate, RotateRoomPlan]):
         if room.rotation == plan.new_rotation:
             return GrowerStepResult(applied=False)
 
+        context.invalidate_room_index(candidate.room_index)
         context.layout.spatial_index.remove_room(candidate.room_index, room)
         room.rotation = plan.new_rotation
         context.layout.spatial_index.add_room(candidate.room_index, room)
@@ -152,4 +161,3 @@ def run_rotate_rooms_grower(context: GrowerContext) -> int:
         applier=RotateRoomApplier(),
     )
     return grower.run(context)
-

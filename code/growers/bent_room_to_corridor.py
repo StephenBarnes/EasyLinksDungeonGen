@@ -36,6 +36,7 @@ from models import (
 )
 
 from growers.base import (
+    CandidateDependencies,
     CandidateFinder,
     DungeonGrower,
     GeometryPlanner,
@@ -103,6 +104,13 @@ class BentRoomToCorridorCandidateFinder(
     ) -> None:
         """Mark the candidate port as reserved so it is not reused this run."""
         self._used_ports.add((candidate.room_idx, candidate.port_idx))
+
+    def dependencies(
+        self,
+        context: GrowerContext,
+        candidate: BentRoomToCorridorCandidate,
+    ) -> CandidateDependencies:
+        return CandidateDependencies.from_iterables(rooms=(candidate.room_idx,))
 
 
 class BentRoomToCorridorGeometryPlanner(
@@ -287,6 +295,16 @@ class BentRoomToCorridorGeometryPlanner(
                             if plan is not None:
                                 return plan
         return None
+
+    def dependencies(
+        self,
+        context: GrowerContext,
+        candidate: BentRoomToCorridorCandidate,
+        plan: BentRoomToCorridorPlan,
+    ) -> CandidateDependencies:
+        return CandidateDependencies.from_iterables(
+            corridors=(plan.target_corridor_idx,)
+        )
 
     @staticmethod
     def _aligned_translation(value: float) -> Optional[int]:
@@ -769,6 +787,8 @@ class BentRoomToCorridorApplier(
         )
         context.layout.set_room_component(candidate.room_idx, component_id)
         context.layout.set_corridor_component(plan.target_corridor_idx, component_id)
+
+        context.invalidate_corridor_index(plan.target_corridor_idx)
 
         bend_room_index = len(context.layout.placed_rooms)
         context.layout.register_room(plan.bend_room, component_id)
