@@ -1,3 +1,22 @@
+"""Bridge a room to an existing corridor via a bend room and inserted T-junction.
+
+The grower iterates over open room ports, shuffling them to diversify layouts.
+For each candidate port, it tries compatible corridor widths and explores every
+rotation of each bend-room template. It aligns the bend so one port connects
+back to the candidate room while a perpendicular port branches toward a target
+corridor. Alignment is solved by projecting along the corridor axis, snapping to
+grid coordinates, and rejecting placements that collide with rooms or corridors.
+
+When a bend placement succeeds, the planner constructs corridor geometry from
+the room to the bend and invokes the T-junction planner to splice into an
+existing corridor. This includes splitting the corridor geometry, generating
+port requirements for both existing corridor segments and the new branch, and
+trying T-junction templates that satisfy those constraints while respecting
+limited tile overlaps. The applier merges connected components, registers the
+new rooms and corridors, and rewires the corridor segments through the newly
+placed junction.
+"""
+
 from __future__ import annotations
 
 import math
@@ -51,6 +70,7 @@ class BentRoomToCorridorCandidateFinder(
         self._used_ports: Set[Tuple[int, int]] = set()
 
     def find_candidates(self, context: GrowerContext) -> Iterable[BentRoomToCorridorCandidate]:
+        """Yield room ports that are still available for corridor attachment."""
         self._used_ports.clear()
         room_world_ports = [room.get_world_ports() for room in context.layout.placed_rooms]
         available_ports = context.list_available_ports(room_world_ports)
@@ -75,6 +95,7 @@ class BentRoomToCorridorCandidateFinder(
         candidate: BentRoomToCorridorCandidate,
         plan: BentRoomToCorridorPlan,
     ) -> None:
+        """Mark the candidate port as reserved so it is not reused this run."""
         self._used_ports.add((candidate.room_idx, candidate.port_idx))
 
 
@@ -90,6 +111,7 @@ class BentRoomToCorridorGeometryPlanner(
         context: GrowerContext,
         candidate: BentRoomToCorridorCandidate,
     ) -> Optional[BentRoomToCorridorPlan]:
+        """Return a bend/junction layout that links the candidate room to a corridor."""
         if random.random() > self.fill_probability:
             return None
         width_options = list(candidate.world_port.widths)
@@ -123,6 +145,7 @@ class BentRoomToCorridorGeometryPlanner(
         bend_templates: Sequence[RoomTemplate],
         existing_links: Set[Tuple[int, int]],
     ) -> Optional[BentRoomToCorridorPlan]:
+        """Search bend templates/rotations to connect the room at the requested width."""
         room_port = candidate.world_port
         direction = room_port.direction
         axis_index = 0 if direction.dx != 0 else 1
@@ -138,6 +161,8 @@ class BentRoomToCorridorGeometryPlanner(
 
         for template in bend_templates:
             for rotation in VALID_ROTATIONS:
+                # TODO: cache rotated bend templates and port groupings to remove
+                # repeated `PlacedRoom` instantiation and port classification.
                 temp_room = PlacedRoom(template, 0, 0, rotation)
                 rotated_ports = temp_room.get_world_ports()
                 matching_indices = [
@@ -148,10 +173,11 @@ class BentRoomToCorridorGeometryPlanner(
                 if not matching_indices:
                     continue
 
+                matching_index_set = {idx for idx, _ in matching_indices}
                 branch_indices = [
                     (idx, port)
                     for idx, port in enumerate(rotated_ports)
-                    if idx not in {idx for idx, _ in matching_indices}
+                    if idx not in matching_index_set
                     and port.direction.dot(direction) == 0
                     and width in port.widths
                 ]
@@ -197,9 +223,11 @@ class BentRoomToCorridorGeometryPlanner(
         distances: Sequence[int],
         existing_links: Set[Tuple[int, int]],
     ) -> Optional[BentRoomToCorridorPlan]:
+        """Place the bend room and build corridors if the spatial layout permits it."""
         room_port = candidate.world_port
 
         def aligned_translation(value: float) -> Optional[int]:
+            """Snap a floating-point offset to the grid; reject off-grid results."""
             if not math.isclose(value, round(value), abs_tol=1e-6):
                 return None
             return int(round(value))
@@ -312,6 +340,7 @@ class BentRoomToCorridorGeometryPlanner(
 
     @staticmethod
     def _boundary_tiles(segment: CorridorGeometry, axis_index: Optional[int]) -> Set[TilePos]:
+        """Return the tiles along the segment boundary facing the junction."""
         if axis_index is None:
             return set()
         start_axis, end_axis = segment.port_axis_values
@@ -335,6 +364,7 @@ class BentRoomToCorridorGeometryPlanner(
         corridor_axis: int,
         junction_tiles: Iterable[TilePos],
     ) -> Set[TilePos]:
+        """Allow overlaps only along shared faces to preserve corridor widths."""
         allowed: Set[TilePos] = set(junction_tiles)
         allowed.update(cls._boundary_tiles(branch_geometry, branch_axis))
         allowed.update(cls._boundary_tiles(seg_existing_a, corridor_axis))
@@ -353,6 +383,7 @@ class BentRoomToCorridorGeometryPlanner(
         extra_room_tiles: Dict[TilePos, int],
         existing_links: Set[Tuple[int, int]],
     ) -> Optional[_BranchPlan]:
+        """Attach the bend to a corridor by inserting a T-junction and constraints."""
         branch_result = context.build_t_junction_geometry(
             bend_room_index,
             bend_branch_port,
@@ -460,6 +491,8 @@ class BentRoomToCorridorGeometryPlanner(
         )
         if placement is None:
             return None
+        # TODO: pass pre-fetched T-junction templates into `_build_branch_plan`
+        # to avoid repeated calls to `get_room_templates` for each candidate.
 
         placed_room, port_mapping, geometry_overrides = placement
         if geometry_overrides:
@@ -500,6 +533,7 @@ class BentRoomToCorridorApplier(
         candidate: BentRoomToCorridorCandidate,
         plan: BentRoomToCorridorPlan,
     ) -> GrowerStepResult:
+        """Commit bend and junction rooms plus the connecting corridors to the layout."""
         component_id = context.layout.merge_components(
             context.layout.normalize_room_component(candidate.room_idx),
             context.layout.normalize_corridor_component(plan.target_corridor_idx),
@@ -589,6 +623,7 @@ class BentRoomToCorridorApplier(
         return GrowerStepResult(applied=True, stop=stop)
 
     def finalize(self, context: GrowerContext) -> int:
+        """Log how many placements succeeded and return the new link count."""
         if self._created == 0:
             print("Bent-room-to-corridor grower: no placements succeeded.")
         else:
@@ -608,6 +643,7 @@ def _run_bent_room_to_corridor_grower(
     stop_after_first: bool,
     name: str,
 ) -> int:
+    """Internal helper that drives the grower with supplied runtime parameters."""
     if not context.layout.corridors:
         print("Bent-room-to-corridor grower: skipped - no corridors available to join.")
         return 0
@@ -631,6 +667,7 @@ def run_bent_room_to_corridor_grower(
     stop_after_first: bool,
     fill_probability: float = 1.0,
 ) -> int:
+    """Connect rooms to corridors via bend rooms; exposed entry point for configs."""
     return _run_bent_room_to_corridor_grower(
         context,
         fill_probability,

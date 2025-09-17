@@ -1,0 +1,54 @@
+Benchmark:
+
+Run 01: 1.144s (seed 414249) | largest component 78.9% | diversity 0.746
+Run 02: 934.5ms (seed 281700) | largest component 100.0% | diversity 0.769
+Run 03: 1.062s (seed 50855) | largest component 55.0% | diversity 0.657
+Run 04: 1.373s (seed 916159) | largest component 88.2% | diversity 0.630
+Run 05: 866.8ms (seed 281953) | largest component 88.9% | diversity 0.730
+Run 06: 1.566s (seed 875919) | largest component 85.7% | diversity 0.722
+Run 07: 683.4ms (seed 142428) | largest component 100.0% | diversity 0.707
+Run 08: 1.284s (seed 192165) | largest component 90.9% | diversity 0.675
+Run 09: 802.5ms (seed 869669) | largest component 100.0% | diversity 0.729
+Run 10: 1.592s (seed 210759) | largest component 70.6% | diversity 0.741
+Run 11: 2.072s (seed 948603) | largest component 86.4% | diversity 0.758
+Run 12: 1.154s (seed 423016) | largest component 59.1% | diversity 0.591
+Run 13: 1.400s (seed 220649) | largest component 70.0% | diversity 0.625
+Run 14: 1.610s (seed 332724) | largest component 96.9% | diversity 0.606
+Run 15: 1.923s (seed 802002) | largest component 89.3% | diversity 0.593
+Run 16: 2.058s (seed 957877) | largest component 38.9% | diversity 0.667
+Run 17: 723.6ms (seed 631058) | largest component 100.0% | diversity 0.597
+Run 18: 1.054s (seed 899055) | largest component 86.4% | diversity 0.717
+Run 19: 913.1ms (seed 542186) | largest component 44.4% | diversity 0.621
+Run 20: 1.142s (seed 703103) | largest component 75.0% | diversity 0.688
+
+Config runs: 20
+Mean generation time: 1.268s
+Median generation time: 1.149s
+Worst-case generation time: 2.072s (seed 948603)
+Largest connected component: mean 80.2%, median 86.4%, success rate 60.0% for threshold 80.0%
+Room diversity (1 - Gini): mean 0.678, median 0.681, p5 0.593, success rate 100.0% for threshold 0.400
+
+Room template distribution across runs:
+  room_8x6_2doors: 105 rooms (23.7% of 443 total rooms)
+  room_8x8_4doors: 87 rooms (19.6% of 443 total rooms)
+  room_6x4_deadend: 62 rooms (14.0% of 443 total rooms)
+  room_6x6_90deg: 59 rooms (13.3% of 443 total rooms)
+  room_8x10_5doors: 53 rooms (12.0% of 443 total rooms)
+  junction_4x4_3doors: 17 rooms (3.8% of 443 total rooms)
+  junction_2x4: 11 rooms (2.5% of 443 total rooms)
+  bend_4x4_left: 9 rooms (2.0% of 443 total rooms)
+  bend_4x4_right: 9 rooms (2.0% of 443 total rooms)
+  bend_2x2_left: 8 rooms (1.8% of 443 total rooms)
+  bend_2x4_right: 7 rooms (1.6% of 443 total rooms)
+  bend_2x4_left: 5 rooms (1.1% of 443 total rooms)
+  bend_2x2_right: 5 rooms (1.1% of 443 total rooms)
+  junction_4x4: 4 rooms (0.9% of 443 total rooms)
+  junction_2x2: 2 rooms (0.5% of 443 total rooms)
+
+Grower performance summary:
+  bent_room_to_corridor: invocations=96, total_time=21.260s, avg_time=221.5ms, avg_rooms=0.35, avg_corridors=0.53
+  bent_room_to_room: invocations=117, total_time=3.325s, avg_time=28.4ms, avg_rooms=0.32, avg_corridors=0.65
+  room_to_corridor: invocations=144, total_time=358.6ms, avg_time=2.5ms, avg_rooms=0.12, avg_corridors=0.24
+  room_to_room: invocations=223, total_time=244.2ms, avg_time=1.1ms, avg_rooms=0.00, avg_corridors=0.15
+  through_corridor: invocations=43, total_time=87.0ms, avg_time=2.0ms, avg_rooms=0.84, avg_corridors=0.84
+  rotate_rooms: invocations=28, total_time=3.1ms, avg_time=0.1ms, avg_rooms=0.00, avg_corridors=0.00
