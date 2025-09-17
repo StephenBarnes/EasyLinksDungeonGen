@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Dict, List
+from time import perf_counter
+from typing import Callable, Dict, List
 
 from dungeon_config import DungeonConfig
 from grower_context import GrowerContext
@@ -17,6 +18,7 @@ from growers import (
 )
 from dungeon_layout import DungeonLayout
 from root_room_placer import RootRoomPlacer
+from metrics import GenerationMetrics
 
 
 class DungeonGenerator:
@@ -25,6 +27,7 @@ class DungeonGenerator:
     def __init__(self, config: DungeonConfig) -> None:
         self.config = config
         self.layout = DungeonLayout(config)
+        self.metrics = GenerationMetrics() if config.collect_metrics else None
 
         self.room_templates = list(config.room_templates)
         self.room_templates_by_kind: Dict[RoomKind, List[RoomTemplate]] = {
@@ -39,6 +42,32 @@ class DungeonGenerator:
             layout=self.layout,
             room_templates_by_kind=self.room_templates_by_kind,
         )
+
+    def _run_grower(
+        self,
+        name: str,
+        func: Callable[..., int],
+        *args,
+        **kwargs,
+    ) -> int:
+        if self.metrics is None:
+            return func(*args, **kwargs)
+
+        rooms_before = len(self.layout.placed_rooms)
+        corridors_before = len(self.layout.corridors)
+        start = perf_counter()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            duration = perf_counter() - start
+            rooms_delta = len(self.layout.placed_rooms) - rooms_before
+            corridors_delta = len(self.layout.corridors) - corridors_before
+            self.metrics.record_grower_run(
+                name,
+                duration,
+                rooms_delta,
+                corridors_delta,
+            )
 
     def generate(self) -> None:
         """Generates the dungeon, by invoking dungeon-growers."""
@@ -58,35 +87,70 @@ class DungeonGenerator:
 
         # Step 2: Run our growers repeatedly. Re-run simpler rules until they terminate.
         def run_connection_growers() -> int:
-            total_created = run_room_to_room_grower(context)
+            total_created = self._run_grower("room_to_room", run_room_to_room_grower, context)
             num_created_local = 1
             while num_created_local > 0:
-                num_created_local = run_room_to_corridor_grower(context, fill_probability=1)
-                num_created_local += run_room_to_room_grower(context)
+                num_created_local = self._run_grower(
+                    "room_to_corridor",
+                    run_room_to_corridor_grower,
+                    context,
+                    fill_probability=1,
+                )
+                num_created_local += self._run_grower(
+                    "room_to_room", run_room_to_room_grower, context
+                )
                 total_created += num_created_local
 
-            num_created_local = run_bent_room_to_room_grower(context, stop_after_first=True)
+            num_created_local = self._run_grower(
+                "bent_room_to_room",
+                run_bent_room_to_room_grower,
+                context,
+                stop_after_first=True,
+            )
             total_created += num_created_local
             while num_created_local > 0:
-                num_created_local = run_room_to_room_grower(context)
-                num_created_local += run_room_to_corridor_grower(context, fill_probability=1)
+                num_created_local = self._run_grower(
+                    "room_to_room", run_room_to_room_grower, context
+                )
+                num_created_local += self._run_grower(
+                    "room_to_corridor",
+                    run_room_to_corridor_grower,
+                    context,
+                    fill_probability=1,
+                )
                 total_created += num_created_local
                 if num_created_local == 0:
-                    num_created_local = run_bent_room_to_room_grower(context, stop_after_first=True)
+                    num_created_local = self._run_grower(
+                        "bent_room_to_room",
+                        run_bent_room_to_room_grower,
+                        context,
+                        stop_after_first=True,
+                    )
                     total_created += num_created_local
 
-            num_created_local = run_bent_room_to_corridor_grower(
+            num_created_local = self._run_grower(
+                "bent_room_to_corridor",
+                run_bent_room_to_corridor_grower,
                 context,
                 stop_after_first=True,
                 fill_probability=1,
             )
             total_created += num_created_local
             while num_created_local > 0:
-                num_created_local = run_room_to_room_grower(context)
-                num_created_local += run_room_to_corridor_grower(context, fill_probability=1)
+                num_created_local = self._run_grower(
+                    "room_to_room", run_room_to_room_grower, context
+                )
+                num_created_local += self._run_grower(
+                    "room_to_corridor",
+                    run_room_to_corridor_grower,
+                    context,
+                    fill_probability=1,
+                )
                 total_created += num_created_local
                 if num_created_local == 0:
-                    num_created_local = run_bent_room_to_corridor_grower(
+                    num_created_local = self._run_grower(
+                        "bent_room_to_corridor",
+                        run_bent_room_to_corridor_grower,
                         context,
                         stop_after_first=True,
                         fill_probability=1,
@@ -101,13 +165,19 @@ class DungeonGenerator:
         num_created = 1
         while num_created > 0:
             num_created = 0
-            rotated_rooms = run_rotate_rooms_grower(context)
+            rotated_rooms = self._run_grower(
+                "rotate_rooms", run_rotate_rooms_grower, context
+            )
             if rotated_rooms > 0:
                 num_created = run_connection_growers()
 
-        num_created = run_through_corridor_grower(context)
+        num_created = self._run_grower(
+            "through_corridor", run_through_corridor_grower, context
+        )
         while num_created > 0:
-            num_created = run_through_corridor_grower(context)
+            num_created = self._run_grower(
+                "through_corridor", run_through_corridor_grower, context
+            )
             num_created += run_connection_growers()
 
         # Additional growers will be invoked here, then step 3.

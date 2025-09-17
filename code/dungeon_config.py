@@ -37,6 +37,7 @@ class DungeonConfig:
 
     macro_grid_size: int = 4
     random_seed: int | None = None
+    collect_metrics: bool = False
     max_connected_placement_attempts: int = 40
     max_consecutive_limit_failures: int = 5
     _door_macro_alignment_offsets: Mapping[Direction, tuple[float, float]] = field(init=False, repr=False)
