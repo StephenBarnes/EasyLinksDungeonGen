@@ -155,7 +155,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(1, 0.5), direction=Direction.EAST, widths=frozenset((2,))),
                 PortTemplate(pos=(0, 0.5), direction=Direction.WEST, widths=frozenset((2,))),
             ],
-            t_junction_weight=0.0001, # Temporary, for debugging
+            t_junction_weight=0.3,
             four_way_weight=0.3,
             kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
             allow_door_overlaps=True,
@@ -169,7 +169,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(1, 1.5), direction=Direction.EAST, widths=frozenset((4,2))),
                 PortTemplate(pos=(0, 1.5), direction=Direction.WEST, widths=frozenset((4,2))),
             ],
-            t_junction_weight=0.0001, # Temporary, for debugging
+            t_junction_weight=0.3,
             four_way_weight=0.3,
             kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
             allow_door_overlaps=True,
@@ -212,7 +212,7 @@ def main() -> None:
         num_rooms_to_place=3,
         min_room_separation=1,
         min_intra_component_connection_distance=10,
-        random_seed=232076,
+        random_seed=None,
     )
 
     seed = config.random_seed
