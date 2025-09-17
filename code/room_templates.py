@@ -1,0 +1,194 @@
+"""Holds a handcrafted set of room templates for the prototype."""
+
+from models import PortTemplate, RoomTemplate, RoomKind
+from geometry import Direction
+
+prototype_room_templates = [
+	RoomTemplate(
+		name="room_8x8_4doors",
+		size=(8, 8),
+		ports=[
+			PortTemplate(pos=(3.5, 0), direction=Direction.NORTH, widths=frozenset((2, 4))),
+			PortTemplate(pos=(3.5, 7), direction=Direction.SOUTH, widths=frozenset((2, 4))),
+			PortTemplate(pos=(0, 3.5), direction=Direction.WEST, widths=frozenset((2, 4))),
+			PortTemplate(pos=(7, 3.5), direction=Direction.EAST, widths=frozenset((2, 4))),
+		],
+		root_weight_middle=1.5,
+		root_weight_edge=0.4,
+		root_weight_intermediate=1.0,
+		direct_weight=1.5,
+		kinds=frozenset((RoomKind.STANDALONE, RoomKind.FOUR_WAY, RoomKind.T_JUNCTION, RoomKind.BEND, RoomKind.THROUGH)),
+	),
+	RoomTemplate(
+		name="room_8x10_5doors",
+		size=(8, 10),
+		ports=[
+			PortTemplate(pos=(3.5, 9), direction=Direction.SOUTH, widths=frozenset((2, 4))),
+			PortTemplate(pos=(0, 1.5), direction=Direction.WEST, widths=frozenset((2,))),
+			PortTemplate(pos=(0, 5.5), direction=Direction.WEST, widths=frozenset((2,))),
+			PortTemplate(pos=(7, 1.5), direction=Direction.EAST, widths=frozenset((2,))),
+			PortTemplate(pos=(7, 5.5), direction=Direction.EAST, widths=frozenset((2,))),
+		],
+		root_weight_middle=2.0,
+		root_weight_edge=0.5,
+		root_weight_intermediate=1.2,
+		kinds=frozenset((RoomKind.STANDALONE,)),
+	),
+	RoomTemplate(
+		name="room_8x6_2doors",
+		size=(8, 6),
+		ports=[
+			PortTemplate(pos=(0, 2.5), direction=Direction.WEST, widths=frozenset((2, 4))),
+			PortTemplate(pos=(7, 2.5), direction=Direction.EAST, widths=frozenset((2, 4))),
+		],
+		through_weight=2,
+		kinds=frozenset((RoomKind.STANDALONE, RoomKind.THROUGH)),
+	),
+	RoomTemplate(
+		name="room_6x6_90deg",
+		size=(6, 6),
+		ports=[
+			PortTemplate(pos=(0, 1.5), direction=Direction.WEST, widths=frozenset((2,))),
+			PortTemplate(pos=(3.5, 5), direction=Direction.SOUTH, widths=frozenset((2,))),
+		],
+		root_weight_middle=0.7,
+		root_weight_edge=0.9,
+		root_weight_intermediate=1.1,
+		kinds=frozenset((RoomKind.STANDALONE, RoomKind.BEND)),
+	),
+	RoomTemplate(
+		name="room_6x4_deadend",
+		size=(6, 4),
+		ports=[
+			PortTemplate(pos=(2.5, 0), direction=Direction.NORTH, widths=frozenset((2, 4))),
+		],
+		root_weight_middle=0.1,
+		root_weight_edge=2,
+		root_weight_intermediate=0.3,
+		preferred_center_facing_dir=Direction.NORTH,
+		kinds=frozenset((RoomKind.STANDALONE,)),
+	),
+
+	# Special room templates for 90-degree bends.
+	RoomTemplate(
+		name="bend_2x2_right",
+		size=(2, 2),
+		ports=[
+			PortTemplate(pos=(1, 0.5), direction=Direction.EAST, widths=frozenset((2,))),
+			PortTemplate(pos=(0.5, 1), direction=Direction.SOUTH, widths=frozenset((2,))),
+		],
+		bend_weight=0.3,
+		kinds=frozenset((RoomKind.BEND,)),
+		allow_door_overlaps=True,
+	),
+	RoomTemplate(
+		name="bend_2x2_left",
+		size=(2, 2),
+		ports=[
+			PortTemplate(pos=(0, 0.5), direction=Direction.WEST, widths=frozenset((2,))),
+			PortTemplate(pos=(0.5, 1), direction=Direction.SOUTH, widths=frozenset((2,))),
+		],
+		bend_weight=0.3,
+		kinds=frozenset((RoomKind.BEND,)),
+		allow_door_overlaps=True,
+	),
+	RoomTemplate(
+		name="bend_2x4_right",
+		size=(2, 4),
+		ports=[
+			PortTemplate(pos=(1, 1.5), direction=Direction.EAST, widths=frozenset((4,2))),
+			PortTemplate(pos=(0.5, 3), direction=Direction.SOUTH, widths=frozenset((2,))),
+		],
+		bend_weight=0.3,
+		kinds=frozenset((RoomKind.BEND,)),
+		allow_door_overlaps=True,
+	),
+	RoomTemplate(
+		name="bend_2x4_left",
+		size=(2, 4),
+		ports=[
+			PortTemplate(pos=(0, 1.5), direction=Direction.WEST, widths=frozenset((4,2))),
+			PortTemplate(pos=(0.5, 3), direction=Direction.SOUTH, widths=frozenset((2,))),
+		],
+		bend_weight=0.3,
+		kinds=frozenset((RoomKind.BEND,)),
+		allow_door_overlaps=True,
+	),
+	RoomTemplate(
+		name="bend_4x4_right",
+		size=(4, 4),
+		ports=[
+			PortTemplate(pos=(3, 1.5), direction=Direction.EAST, widths=frozenset((4,2))),
+			PortTemplate(pos=(1.5, 3), direction=Direction.SOUTH, widths=frozenset((4,2))),
+		],
+		bend_weight=0.3,
+		kinds=frozenset((RoomKind.BEND,)),
+		allow_door_overlaps=True,
+	),
+	RoomTemplate(
+		name="bend_4x4_left",
+		size=(4, 4),
+		ports=[
+			PortTemplate(pos=(0, 1.5), direction=Direction.WEST, widths=frozenset((4,2))),
+			PortTemplate(pos=(1.5, 3), direction=Direction.SOUTH, widths=frozenset((4,2))),
+		],
+		bend_weight=0.3,
+		kinds=frozenset((RoomKind.BEND,)),
+		allow_door_overlaps=True,
+	),
+
+	# Special room templates for T-junctions and 4-way intersections.
+	RoomTemplate(
+		name="junction_2x2",
+		size=(2, 2),
+		ports=[
+			PortTemplate(pos=(0.5, 0), direction=Direction.NORTH, widths=frozenset((2,))),
+			PortTemplate(pos=(0.5, 1), direction=Direction.SOUTH, widths=frozenset((2,))),
+			PortTemplate(pos=(1, 0.5), direction=Direction.EAST, widths=frozenset((2,))),
+			PortTemplate(pos=(0, 0.5), direction=Direction.WEST, widths=frozenset((2,))),
+		],
+		t_junction_weight=0.3,
+		four_way_weight=0.3,
+		kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
+		allow_door_overlaps=True,
+	),
+	RoomTemplate(
+		name="junction_2x4",
+		size=(2, 4),
+		ports=[
+			PortTemplate(pos=(0.5, 0), direction=Direction.NORTH, widths=frozenset((2,))),
+			PortTemplate(pos=(0.5, 3), direction=Direction.SOUTH, widths=frozenset((2,))),
+			PortTemplate(pos=(1, 1.5), direction=Direction.EAST, widths=frozenset((4,2))),
+			PortTemplate(pos=(0, 1.5), direction=Direction.WEST, widths=frozenset((4,2))),
+		],
+		t_junction_weight=0.3,
+		four_way_weight=0.3,
+		kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
+		allow_door_overlaps=True,
+	),
+	RoomTemplate(
+		name="junction_4x4",
+		size=(4, 4),
+		ports=[
+			PortTemplate(pos=(1.5, 0), direction=Direction.NORTH, widths=frozenset((4,2))),
+			PortTemplate(pos=(1.5, 3), direction=Direction.SOUTH, widths=frozenset((4,2))),
+			PortTemplate(pos=(0, 1.5), direction=Direction.WEST, widths=frozenset((4,2))),
+			PortTemplate(pos=(3, 1.5), direction=Direction.EAST, widths=frozenset((4,2))),
+		],
+		t_junction_weight=0.3,
+		four_way_weight=0.3,
+		kinds=frozenset((RoomKind.T_JUNCTION, RoomKind.FOUR_WAY)),
+		allow_door_overlaps=True,
+	),
+	RoomTemplate(
+		name="junction_4x4_3doors",
+		size=(4, 4),
+		ports=[
+			PortTemplate(pos=(1.5, 0), direction=Direction.NORTH, widths=frozenset((4,2))),
+			PortTemplate(pos=(1.5, 3), direction=Direction.SOUTH, widths=frozenset((4,2))),
+			PortTemplate(pos=(0, 1.5), direction=Direction.WEST, widths=frozenset((4,2))),
+		],
+		kinds=frozenset((RoomKind.T_JUNCTION,)),
+		allow_door_overlaps=True,
+	),
+]

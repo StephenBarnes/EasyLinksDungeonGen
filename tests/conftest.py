@@ -13,7 +13,7 @@ from dungeon_config import DungeonConfig
 from dungeon_layout import DungeonLayout
 from geometry import Direction
 from grower_context import GrowerContext
-from main import build_default_room_templates
+from room_templates import prototype_room_templates
 from models import PortTemplate, RoomKind, RoomTemplate
 
 
@@ -63,7 +63,7 @@ def dungeon_layout(dungeon_config: DungeonConfig) -> DungeonLayout:
 
 @pytest.fixture
 def default_room_templates() -> list[RoomTemplate]:
-    return build_default_room_templates()
+    return prototype_room_templates
 
 
 @pytest.fixture
