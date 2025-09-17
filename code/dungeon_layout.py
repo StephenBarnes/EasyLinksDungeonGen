@@ -28,6 +28,9 @@ class DungeonLayout:
         self.spatial_index = SpatialIndex()
         self.grid = [[" " for _ in range(self.config.width)] for _ in range(self.config.height)]
         self._graph_distance_cache: Dict[Tuple[GraphNode, GraphNode], Optional[int]] = {}
+        self._graph_corridor_to_rooms: Optional[Dict[int, Tuple[int, ...]]] = None
+        self._graph_room_to_corridors: Optional[Dict[int, Tuple[int, ...]]] = None
+        self._graph_room_to_rooms: Optional[Dict[int, Tuple[int, ...]]] = None
 
     def new_component_id(self) -> int:
         return self.component_manager.new_component()
@@ -209,23 +212,92 @@ class DungeonLayout:
         if component_a != component_b:
             return True
 
-        distance = self.graph_distance(node_a, node_b)
+        distance = self.graph_distance(node_a, node_b, stop_at=threshold)
         if distance is None:
             return True
         return distance > threshold
 
-    def graph_distance(self, entity_a: GraphEntity, entity_b: GraphEntity) -> Optional[int]:
+    def graph_distance(
+        self,
+        entity_a: GraphEntity,
+        entity_b: GraphEntity,
+        *,
+        stop_at: Optional[int] = None,
+    ) -> Optional[int]:
         node_a = self._normalize_graph_entity(entity_a)
         node_b = self._normalize_graph_entity(entity_b)
         cache_key = self._graph_distance_cache_key(node_a, node_b)
-        if cache_key in self._graph_distance_cache:
-            return self._graph_distance_cache[cache_key]
+        _sentinel = object()
+        cached = self._graph_distance_cache.get(cache_key, _sentinel)
+        if cached is not _sentinel:
+            assert type(cached) == int
+            if cached is None:
+                return None
+            if stop_at is not None and cached > stop_at:
+                return None
+            return cached
         if node_a == node_b:
             self._graph_distance_cache[cache_key] = 0
             return 0
 
+        self._ensure_graph_adjacency()
+        assert self._graph_corridor_to_rooms is not None
+        assert self._graph_room_to_corridors is not None
+        assert self._graph_room_to_rooms is not None
+        corridor_to_rooms = self._graph_corridor_to_rooms
+        room_to_corridors = self._graph_room_to_corridors
+        room_to_rooms = self._graph_room_to_rooms
+
+        visited: Set[GraphNode] = {node_a}
+        queue = deque([(node_a, 0)])
+
+        def neighbors(node: GraphNode) -> Iterable[GraphNode]:
+            kind, idx = node
+            if kind == "room":
+                room_neighbors = room_to_rooms.get(idx, ())
+                for other_room in room_neighbors:
+                    yield ("room", other_room)
+                for corridor_idx in room_to_corridors.get(idx, ()):
+                    yield ("corridor", corridor_idx)
+            elif kind == "corridor":
+                for room_idx in corridor_to_rooms.get(idx, ()):
+                    yield ("room", room_idx)
+            else:
+                raise ValueError(f"Unsupported graph node kind {kind}")
+
+        result: Optional[int] = None
+        while queue:
+            current, distance = queue.popleft()
+            # TODO: since we only need to check if the distance is going to be greater or less than the threshold, we could check if the distance from current to node b is less than the threshold. In that case, we could stop early.
+            if stop_at is not None and distance > stop_at:
+                continue
+            if current == node_b:
+                result = distance
+                break
+            if stop_at is not None and distance == stop_at:
+                continue
+            for neighbor in neighbors(current):
+                if neighbor in visited:
+                    continue
+                visited.add(neighbor)
+                next_distance = distance + 1
+                if stop_at is not None and next_distance > stop_at:
+                    continue
+                queue.append((neighbor, next_distance))
+
+        if stop_at is None or result is not None:
+            self._graph_distance_cache[cache_key] = result
+        return result
+
+    def _graph_distance_cache_key(self, node_a: GraphNode, node_b: GraphNode) -> Tuple[GraphNode, GraphNode]:
+        return (node_a, node_b) if node_a <= node_b else (node_b, node_a)
+
+    def _ensure_graph_adjacency(self) -> None:
+        if self._graph_corridor_to_rooms is not None:
+            return
+
         corridor_to_rooms: Dict[int, Tuple[int, ...]] = {}
-        room_to_corridors: Dict[int, List[int]] = {}
+        room_to_corridors_sets: Dict[int, Set[int]] = {}
         for idx, corridor in enumerate(self.corridors):
             rooms: List[int] = []
             if corridor.room_a_index is not None:
@@ -234,47 +306,22 @@ class DungeonLayout:
                 rooms.append(corridor.room_b_index)
             corridor_to_rooms[idx] = tuple(rooms)
             for room_idx in rooms:
-                room_to_corridors.setdefault(room_idx, []).append(idx)
+                room_to_corridors_sets.setdefault(room_idx, set()).add(idx)
 
-        room_to_rooms: Dict[int, Set[int]] = {}
+        room_to_rooms_sets: Dict[int, Set[int]] = {}
         for room_a_idx, room_b_idx in self.room_room_links:
-            room_to_rooms.setdefault(room_a_idx, set()).add(room_b_idx)
-            room_to_rooms.setdefault(room_b_idx, set()).add(room_a_idx)
+            room_to_rooms_sets.setdefault(room_a_idx, set()).add(room_b_idx)
+            room_to_rooms_sets.setdefault(room_b_idx, set()).add(room_a_idx)
 
-        visited: Set[GraphNode] = {node_a}
-        queue = deque([(node_a, 0)])
-
-        def neighbors(node: GraphNode) -> Iterable[GraphNode]:
-            kind, idx = node
-            if kind == "room":
-                room_neighbors = room_to_rooms.get(idx, set())
-                for other_room in room_neighbors:
-                    yield ("room", other_room)
-                for corridor_idx in room_to_corridors.get(idx, []):
-                    yield ("corridor", corridor_idx)
-            elif kind == "corridor":
-                for room_idx in corridor_to_rooms.get(idx, ()):  # type: ignore[arg-type]
-                    yield ("room", room_idx)
-            else:
-                raise ValueError(f"Unsupported graph node kind {kind}")
-
-        result: Optional[int] = None
-        while queue:
-            current, distance = queue.popleft()
-            if current == node_b:
-                result = distance
-                break
-            for neighbor in neighbors(current):
-                if neighbor in visited:
-                    continue
-                visited.add(neighbor)
-                queue.append((neighbor, distance + 1))
-
-        self._graph_distance_cache[cache_key] = result
-        return result
-
-    def _graph_distance_cache_key(self, node_a: GraphNode, node_b: GraphNode) -> Tuple[GraphNode, GraphNode]:
-        return (node_a, node_b) if node_a <= node_b else (node_b, node_a)
+        self._graph_corridor_to_rooms = corridor_to_rooms
+        self._graph_room_to_corridors = {
+            room_idx: tuple(corridor_indices)
+            for room_idx, corridor_indices in room_to_corridors_sets.items()
+        }
+        self._graph_room_to_rooms = {
+            room_idx: tuple(neighbors)
+            for room_idx, neighbors in room_to_rooms_sets.items()
+        }
 
     def _normalize_graph_entity(self, entity: GraphEntity) -> GraphNode:
         if isinstance(entity, PlacedRoom):
@@ -308,6 +355,9 @@ class DungeonLayout:
 
     def _invalidate_graph_cache(self) -> None:
         self._graph_distance_cache.clear()
+        self._graph_corridor_to_rooms = None
+        self._graph_room_to_corridors = None
+        self._graph_room_to_rooms = None
 
     def _clear_grid(self) -> None:
         for row in self.grid:
