@@ -416,7 +416,7 @@ class DungeonGenerator:
         if not axis_values:
             return None
 
-        tiles: List[Tuple[int, int]] = []
+        tiles: List[TilePos] = []
         for axis_value in axis_values:
             for cross in cross_coords:
                 if axis_index == 0:
@@ -425,7 +425,7 @@ class DungeonGenerator:
                     x, y = cross, axis_value
                 if not (0 <= x < self.width and 0 <= y < self.height):
                     return None
-                tiles.append((x, y))
+                tiles.append(TilePos(x, y))
 
         return CorridorGeometry(
             tiles=tuple(tiles),
@@ -454,7 +454,7 @@ class DungeonGenerator:
         room_index_b: int,
         port_b: WorldPort,
         width: int,
-        tile_to_room: Dict[Tuple[int, int], int],
+        tile_to_room: Dict[TilePos, int],
     ) -> Optional[CorridorGeometry]:
         """Return the carved tiles for a straight corridor if it's valid."""
         dx1, dy1 = port_a.direction
@@ -481,7 +481,7 @@ class DungeonGenerator:
         axis_end = max(exit_a, exit_b)
         cross_coords = self._corridor_cross_coords(center, width)
 
-        tiles: List[Tuple[int, int]] = []
+        tiles: List[TilePos] = []
         for axis_value in range(axis_start, axis_end + 1):
             for cross_value in cross_coords:
                 if axis_index == 0:
@@ -490,9 +490,10 @@ class DungeonGenerator:
                     x, y = cross_value, axis_value
                 if not (0 <= x < self.width and 0 <= y < self.height):
                     return None
-                if (x, y) in tile_to_room:
+                tile = TilePos(x, y)
+                if tile in tile_to_room:
                     return None
-                tiles.append((x, y))
+                tiles.append(tile)
 
         allowed_axis_by_room = {
             room_index_a: exit_a,
@@ -502,10 +503,10 @@ class DungeonGenerator:
         for tile in tiles:
             axis_value = tile[axis_index]
             neighbors = (
-                (tile[0] + 1, tile[1]),
-                (tile[0] - 1, tile[1]),
-                (tile[0], tile[1] + 1),
-                (tile[0], tile[1] - 1),
+                TilePos(tile.x + 1, tile.y),
+                TilePos(tile.x - 1, tile.y),
+                TilePos(tile.x, tile.y + 1),
+                TilePos(tile.x, tile.y - 1),
             )
             for neighbor in neighbors:
                 neighbor_room = tile_to_room.get(neighbor)
@@ -524,9 +525,9 @@ class DungeonGenerator:
         )
 
     @staticmethod
-    def _port_center_from_tiles(inside_tiles: Tuple[Tuple[int, int], ...]) -> Tuple[float, float]:
-        xs = {tile[0] for tile in inside_tiles}
-        ys = {tile[1] for tile in inside_tiles}
+    def _port_center_from_tiles(inside_tiles: Tuple[TilePos, ...]) -> Tuple[float, float]:
+        xs = {tile.x for tile in inside_tiles}
+        ys = {tile.y for tile in inside_tiles}
         if len(xs) == 1:
             x = float(next(iter(xs)))
             min_y = min(ys)
@@ -552,7 +553,7 @@ class DungeonGenerator:
         port_index: Optional[int] = None,
         corridor_idx: Optional[int] = None,
         corridor_end: Optional[str] = None,
-        junction_tiles: Optional[Iterable[Tuple[int, int]]] = None,
+        junction_tiles: Optional[Iterable[TilePos]] = None,
     ) -> Optional[PortRequirement]:
         if segment is None:
             return None
@@ -566,14 +567,15 @@ class DungeonGenerator:
             direction = (-sign, 0)
         else:
             direction = (0, -sign)
-        junction_set: Optional[Set[Tuple[int, int]]] = None
+        junction_set: Optional[Set[TilePos]] = None
         if junction_tiles is not None:
             junction_set = set(junction_tiles)
 
         if junction_set is not None and all(tile in junction_set for tile in outside_tiles):
             inside_tiles = outside_tiles
         else:
-            inside_tiles = tuple((tx - direction[0], ty - direction[1]) for tx, ty in outside_tiles)
+            dx, dy = direction
+            inside_tiles = tuple(TilePos(tile.x - dx, tile.y - dy) for tile in outside_tiles)
         width = len(outside_tiles)
         if width != expected_width:
             return None
@@ -698,7 +700,7 @@ class DungeonGenerator:
         self,
         required_ports: List[PortRequirement],
         templates: List[RoomTemplate],
-        allowed_overlap_tiles: Set[Tuple[int, int]],
+        allowed_overlap_tiles: Set[TilePos],
         allowed_overlap_corridors: Set[int],
     ) -> Optional[Tuple[PlacedRoom, Dict[int, int], Dict[int, CorridorGeometry]]]:
         if not required_ports:
@@ -795,10 +797,10 @@ class DungeonGenerator:
     def _validate_room_corridor_clearance(self, room_index: int) -> None:
         room = self.placed_rooms[room_index]
         bounds = room.get_bounds()
-        overlaps: List[Tuple[Tuple[int, int], List[int]]] = []
+        overlaps: List[Tuple[TilePos, List[int]]] = []
         for ty in range(bounds.y, bounds.max_y):
             for tx in range(bounds.x, bounds.max_x):
-                tile = (tx, ty)
+                tile = TilePos(tx, ty)
                 corridors = self.corridor_tile_index.get(tile)
                 if corridors:
                     overlaps.append((tile, list(corridors)))
@@ -807,7 +809,7 @@ class DungeonGenerator:
                 f"ERROR: room index {room_index} ({room.template.name}) overlaps corridor tiles:"
             )
             for tile, corridor_indices in overlaps:
-                print(f"    tile {tile} -> corridors {corridor_indices}")
+                print(f"    tile {tile.to_tuple()} -> corridors {corridor_indices}")
             reported: Set[int] = set()
             for _, corridor_indices in overlaps:
                 for corridor_idx in corridor_indices:
@@ -826,7 +828,7 @@ class DungeonGenerator:
                     )
 
     def _split_existing_corridor_geometries(
-        self, corridor: Corridor, junction_tiles: Iterable[Tuple[int, int]]
+        self, corridor: Corridor, junction_tiles: Iterable[TilePos]
     ) -> Tuple[Optional[CorridorGeometry], Optional[CorridorGeometry]]:
         geometry = corridor.geometry
         axis_index = geometry.axis_index
@@ -841,8 +843,8 @@ class DungeonGenerator:
         axis_max = max(axis_values)
         direction = 1 if end_axis > start_axis else -1
 
-        tiles_to_a: List[Tuple[int, int]] = []
-        tiles_to_b: List[Tuple[int, int]] = []
+        tiles_to_a: List[TilePos] = []
+        tiles_to_b: List[TilePos] = []
         for tile in geometry.tiles:
             axis_value = tile[axis_index]
             if direction > 0:
@@ -942,9 +944,9 @@ class DungeonGenerator:
         room_index: int,
         port: WorldPort,
         width: int,
-        tile_to_room: Dict[Tuple[int, int], int],
-        tile_to_corridors: Dict[Tuple[int, int], List[int]],
-    ) -> Optional[Tuple[CorridorGeometry, int, Tuple[Tuple[int, int], ...]]]:
+        tile_to_room: Dict[TilePos, int],
+        tile_to_corridors: Dict[TilePos, List[int]],
+    ) -> Optional[Tuple[CorridorGeometry, int, Tuple[TilePos, ...]]]:
         """Attempt to carve a straight corridor from a port to an existing corridor."""
         axis_index = 0 if port.direction[0] != 0 else 1
         direction = port.direction[axis_index]
@@ -956,12 +958,12 @@ class DungeonGenerator:
         exit_axis_value = self._port_exit_axis_value(port, axis_index)
 
         axis_value = exit_axis_value
-        path_tiles: List[Tuple[int, int]] = []
+        path_tiles: List[TilePos] = []
         max_steps = max(self.width, self.height) + 1
         steps = 0
 
         while True:
-            tiles_for_step: List[Tuple[int, int]] = []
+            tiles_for_step: List[TilePos] = []
             for cross in cross_coords:
                 if axis_index == 0:
                     x, y = axis_value, cross
@@ -970,7 +972,7 @@ class DungeonGenerator:
 
                 if not (0 <= x < self.width and 0 <= y < self.height):
                     return None
-                tiles_for_step.append((x, y))
+                tiles_for_step.append(TilePos(x, y))
 
             all_corridor = all(tile in self.corridor_tiles for tile in tiles_for_step)
             if all_corridor:
@@ -1012,15 +1014,15 @@ class DungeonGenerator:
                     existing_geometry, existing_axis_index
                 )
 
-                intersection_tiles: Set[Tuple[int, int]] = set()
+                intersection_tiles: Set[TilePos] = set()
                 for new_cross in cross_coords:
                     for existing_cross in existing_cross_coords:
                         if axis_index == 0:
                             # New corridor runs horizontally; existing corridor is vertical.
-                            tile = (existing_cross, new_cross)
+                            tile = TilePos(existing_cross, new_cross)
                         else:
                             # New corridor runs vertically; existing corridor is horizontal.
-                            tile = (new_cross, existing_cross)
+                            tile = TilePos(new_cross, existing_cross)
                         intersection_tiles.add(tile)
 
                 geometry = CorridorGeometry(
@@ -1038,10 +1040,10 @@ class DungeonGenerator:
                 if tile in tile_to_room:
                     return None
                 neighbors = (
-                    (tile[0] + 1, tile[1]),
-                    (tile[0] - 1, tile[1]),
-                    (tile[0], tile[1] + 1),
-                    (tile[0], tile[1] - 1),
+                    TilePos(tile.x + 1, tile.y),
+                    TilePos(tile.x - 1, tile.y),
+                    TilePos(tile.x, tile.y + 1),
+                    TilePos(tile.x, tile.y - 1),
                 )
                 for neighbor in neighbors:
                     neighbor_room = tile_to_room.get(neighbor)
@@ -1163,7 +1165,7 @@ class DungeonGenerator:
                             overlaps_corridor = False
                             for ty in range(bend_bounds.y, bend_bounds.max_y):
                                 for tx in range(bend_bounds.x, bend_bounds.max_x):
-                                    if (tx, ty) in self.corridor_tiles:
+                                    if TilePos(tx, ty) in self.corridor_tiles:
                                         overlaps_corridor = True
                                         break
                                 if overlaps_corridor:
@@ -1174,7 +1176,7 @@ class DungeonGenerator:
                             tile_map_with_bend = dict(tile_to_room)
                             for ty in range(bend_bounds.y, bend_bounds.max_y):
                                 for tx in range(bend_bounds.x, bend_bounds.max_x):
-                                    tile_map_with_bend[(tx, ty)] = candidate_room_index
+                                    tile_map_with_bend[TilePos(tx, ty)] = candidate_room_index
 
                             bend_world_ports = placed_bend.get_world_ports()
                             bend_world_h = bend_world_ports[bend_h_idx]
@@ -1294,7 +1296,7 @@ class DungeonGenerator:
 
                 width, geometry = random.choice(viable_options)
 
-                overlap_map: Dict[int, List[Tuple[int, int]]] = {}
+                overlap_map: Dict[int, List[TilePos]] = {}
                 for tile in geometry.tiles:
                     for existing_idx in self.corridor_tile_index.get(tile, []):
                         overlap_map.setdefault(existing_idx, []).append(tile)
@@ -1337,13 +1339,13 @@ class DungeonGenerator:
                         existing_corridor.geometry, existing_axis_index
                     )
 
-                    intersection_tiles: Set[Tuple[int, int]] = set()
+                    intersection_tiles: Set[TilePos] = set()
                     for new_cross in cross_coords_new:
                         for existing_cross in existing_cross_coords:
                             if geometry.axis_index == 0:
-                                tile = (existing_cross, new_cross)
+                                tile = TilePos(existing_cross, new_cross)
                             else:
-                                tile = (new_cross, existing_cross)
+                                tile = TilePos(new_cross, existing_cross)
                             intersection_tiles.add(tile)
 
                     seg_existing_a, seg_existing_b = self._split_existing_corridor_geometries(
@@ -1415,7 +1417,7 @@ class DungeonGenerator:
                     placement = self._attempt_place_special_room(
                         requirements,
                         self.four_way_room_templates,
-                        allowed_overlap_tiles=intersection_tiles,
+                        allowed_overlap_tiles=set(intersection_tiles),
                         allowed_overlap_corridors={existing_idx},
                     )
                     if placement is None:
@@ -1543,7 +1545,7 @@ class DungeonGenerator:
             width_options = list(world_port.widths)
             random.shuffle(width_options)
 
-            viable_options: List[Tuple[int, CorridorGeometry, int, Tuple[Tuple[int, int], ...]]] = []
+            viable_options: List[Tuple[int, CorridorGeometry, int, Tuple[TilePos, ...]]] = []
             for width in width_options:
                 result = self._build_t_junction_geometry(
                     room_idx,

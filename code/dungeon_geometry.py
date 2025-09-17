@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=True)
 class TilePos:
     """Integer tile coordinate."""
 
