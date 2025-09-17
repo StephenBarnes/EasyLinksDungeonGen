@@ -205,6 +205,9 @@ class RootRoomPlacer:
                     standalone_templates,
                     weights=[rt.direct_weight for rt in standalone_templates],
                 )[0]
+                # Special case: don't place a 1-door room directly linked to a 1-door room because we won't be able to connect them to the rest of the dungeon.
+                if len(anchor_room.template.ports) == 1 and len(template.ports) == 1:
+                    continue
                 rotation = Rotation.random()
                 temp_room = PlacedRoom(template, 0, 0, rotation)
                 rot_ports = temp_room.get_world_ports()
