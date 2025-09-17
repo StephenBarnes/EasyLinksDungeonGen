@@ -28,6 +28,7 @@ class DungeonConfig:
     random_seed: int | None = None
     max_connected_placement_attempts: int = 40
     max_consecutive_limit_failures: int = 5
+    min_intra_component_connection_distance: int = 10
     _door_macro_alignment_offsets: Mapping[Direction, tuple[float, float]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -45,6 +46,10 @@ class DungeonConfig:
             raise ValueError("DungeonConfig max_connected_placement_attempts must be positive")
         if self.max_consecutive_limit_failures <= 0:
             raise ValueError("DungeonConfig max_consecutive_limit_failures must be positive")
+        if self.min_intra_component_connection_distance < 0:
+            raise ValueError(
+                "DungeonConfig min_intra_component_connection_distance must be non-negative"
+            )
 
         self.room_templates = tuple(self.room_templates)
         if not self.room_templates:

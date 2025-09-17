@@ -223,6 +223,7 @@ class RootRoomPlacer:
                 candidate = PlacedRoom(template, nx, ny, rotation)
                 if self.layout.is_valid_placement_with_anchor(candidate, anchor_room):
                     self.layout.register_room(candidate, anchor_component_id)
+                    self.layout.add_room_room_link(anchor_room.index, candidate.index)
                     anchor_room.connected_port_indices.add(anchor_idx)
                     candidate.connected_port_indices.add(cand_idx)
                     return candidate

@@ -191,6 +191,7 @@ def main() -> None:
         direct_link_counts_probs={0: 0.55, 1: 0.25, 2: 0.15, 3: 0.05},
         num_rooms_to_place=30,
         min_room_separation=1,
+        min_intra_component_connection_distance=10,
         random_seed=None,
     )
 

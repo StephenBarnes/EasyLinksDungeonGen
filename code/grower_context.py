@@ -562,6 +562,7 @@ class GrowerContext:
         corridor.geometry = primary_segment.geometry
         self.layout.set_corridor_component(corridor_idx, component_id)
         self.layout.spatial_index.add_corridor(corridor_idx, corridor.geometry.tiles)
+        self.layout.update_corridor_links(corridor_idx)
         connected_indices.append(corridor_idx)
 
         for _, segment in segments[1:]:

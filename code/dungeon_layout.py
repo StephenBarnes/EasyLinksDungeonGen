@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Set, Tuple
+from collections import deque
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 import random
 
 from component_manager import ComponentManager
 from dungeon_config import DungeonConfig
 from models import Corridor, PlacedRoom
+
+GraphNode = Tuple[str, int]
+GraphEntity = Union[PlacedRoom, Corridor, Tuple[str, int]]
 from spatial_index import SpatialIndex
 
 
@@ -19,9 +23,11 @@ class DungeonLayout:
         self.placed_rooms: List[PlacedRoom] = []
         self.corridors: List[Corridor] = []
         self.room_corridor_links: Set[Tuple[int, int]] = set()
+        self.room_room_links: Set[Tuple[int, int]] = set()
         self.component_manager = ComponentManager()
         self.spatial_index = SpatialIndex()
         self.grid = [[" " for _ in range(self.config.width)] for _ in range(self.config.height)]
+        self._graph_distance_cache: Dict[Tuple[GraphNode, GraphNode], Optional[int]] = {}
 
     def new_component_id(self) -> int:
         return self.component_manager.new_component()
@@ -33,6 +39,7 @@ class DungeonLayout:
         root = self.component_manager.register_room(component_id)
         room.component_id = root
         self.spatial_index.add_room(room_index, room)
+        self._invalidate_graph_cache()
 
     def register_corridor(self, corridor: Corridor, component_id: int) -> int:
         self.corridors.append(corridor)
@@ -41,6 +48,11 @@ class DungeonLayout:
         root = self.component_manager.register_corridor(component_id)
         corridor.component_id = root
         self.spatial_index.add_corridor(new_index, corridor.geometry.tiles)
+        if corridor.room_a_index is not None:
+            self.room_corridor_links.add((corridor.room_a_index, new_index))
+        if corridor.room_b_index is not None:
+            self.room_corridor_links.add((corridor.room_b_index, new_index))
+        self._invalidate_graph_cache()
         return new_index
 
     def merge_components(self, *component_ids: int) -> int:
@@ -74,6 +86,130 @@ class DungeonLayout:
             self.normalize_room_component(room_a_idx)
             == self.normalize_room_component(room_b_idx)
         )
+
+    def add_room_room_link(self, room_a_idx: int, room_b_idx: int) -> None:
+        if room_a_idx == room_b_idx:
+            return
+        if not (0 <= room_a_idx < len(self.placed_rooms)):
+            raise IndexError(f"Room index {room_a_idx} out of range")
+        if not (0 <= room_b_idx < len(self.placed_rooms)):
+            raise IndexError(f"Room index {room_b_idx} out of range")
+        key = tuple(sorted((room_a_idx, room_b_idx)))
+        if key not in self.room_room_links:
+            self.room_room_links.add(key) # type: ignore
+            self._invalidate_graph_cache()
+
+    def remove_corridor_links(self, corridor_idx: int) -> None:
+        if corridor_idx < 0 or corridor_idx >= len(self.corridors):
+            raise IndexError(f"Corridor index {corridor_idx} out of range")
+        if not self.room_corridor_links:
+            return
+        self.room_corridor_links = {
+            (room_idx, idx)
+            for room_idx, idx in self.room_corridor_links
+            if idx != corridor_idx
+        }
+        self._invalidate_graph_cache()
+
+    def update_corridor_links(self, corridor_idx: int) -> None:
+        if corridor_idx < 0 or corridor_idx >= len(self.corridors):
+            raise IndexError(f"Corridor index {corridor_idx} out of range")
+        self.remove_corridor_links(corridor_idx)
+        corridor = self.corridors[corridor_idx]
+        if corridor.room_a_index is not None:
+            self.room_corridor_links.add((corridor.room_a_index, corridor_idx))
+        if corridor.room_b_index is not None:
+            self.room_corridor_links.add((corridor.room_b_index, corridor_idx))
+        self._invalidate_graph_cache()
+
+    def graph_distance(self, entity_a: GraphEntity, entity_b: GraphEntity) -> Optional[int]:
+        node_a = self._normalize_graph_entity(entity_a)
+        node_b = self._normalize_graph_entity(entity_b)
+        cache_key = self._graph_distance_cache_key(node_a, node_b)
+        if cache_key in self._graph_distance_cache:
+            return self._graph_distance_cache[cache_key]
+        if node_a == node_b:
+            self._graph_distance_cache[cache_key] = 0
+            return 0
+
+        corridor_to_rooms: Dict[int, Tuple[int, ...]] = {}
+        room_to_corridors: Dict[int, List[int]] = {}
+        for idx, corridor in enumerate(self.corridors):
+            rooms: List[int] = []
+            if corridor.room_a_index is not None:
+                rooms.append(corridor.room_a_index)
+            if corridor.room_b_index is not None:
+                rooms.append(corridor.room_b_index)
+            corridor_to_rooms[idx] = tuple(rooms)
+            for room_idx in rooms:
+                room_to_corridors.setdefault(room_idx, []).append(idx)
+
+        room_to_rooms: Dict[int, Set[int]] = {}
+        for room_a_idx, room_b_idx in self.room_room_links:
+            room_to_rooms.setdefault(room_a_idx, set()).add(room_b_idx)
+            room_to_rooms.setdefault(room_b_idx, set()).add(room_a_idx)
+
+        visited: Set[GraphNode] = {node_a}
+        queue = deque([(node_a, 0)])
+
+        def neighbors(node: GraphNode) -> Iterable[GraphNode]:
+            kind, idx = node
+            if kind == "room":
+                room_neighbors = room_to_rooms.get(idx, set())
+                for other_room in room_neighbors:
+                    yield ("room", other_room)
+                for corridor_idx in room_to_corridors.get(idx, []):
+                    yield ("corridor", corridor_idx)
+            elif kind == "corridor":
+                for room_idx in corridor_to_rooms.get(idx, ()):  # type: ignore[arg-type]
+                    yield ("room", room_idx)
+            else:
+                raise ValueError(f"Unsupported graph node kind {kind}")
+
+        result: Optional[int] = None
+        while queue:
+            current, distance = queue.popleft()
+            if current == node_b:
+                result = distance
+                break
+            for neighbor in neighbors(current):
+                if neighbor in visited:
+                    continue
+                visited.add(neighbor)
+                queue.append((neighbor, distance + 1))
+
+        self._graph_distance_cache[cache_key] = result
+        return result
+
+    def _graph_distance_cache_key(self, node_a: GraphNode, node_b: GraphNode) -> Tuple[GraphNode, GraphNode]:
+        return (node_a, node_b) if node_a <= node_b else (node_b, node_a)
+
+    def _normalize_graph_entity(self, entity: GraphEntity) -> GraphNode:
+        if isinstance(entity, PlacedRoom):
+            idx = entity.index
+            if idx < 0:
+                raise ValueError("PlacedRoom does not have a valid index")
+            return ("room", idx)
+        if isinstance(entity, Corridor):
+            idx = entity.index
+            if idx < 0:
+                raise ValueError("Corridor does not have a valid index")
+            return ("corridor", idx)
+        if not isinstance(entity, tuple) or len(entity) != 2:
+            raise TypeError("Graph entities must be PlacedRoom, Corridor, or ('kind', index) tuples")
+        kind, idx = entity
+        if kind not in {"room", "corridor"}:
+            raise ValueError(f"Unsupported graph entity kind {kind}")
+        if not isinstance(idx, int):
+            raise TypeError("Graph entity index must be an integer")
+        if kind == "room" and not (0 <= idx < len(self.placed_rooms)):
+            raise IndexError(f"Room index {idx} out of range")
+        if kind == "corridor" and not (0 <= idx < len(self.corridors)):
+            raise IndexError(f"Corridor index {idx} out of range")
+        return (kind, idx)
+
+    def _invalidate_graph_cache(self) -> None:
+        self._graph_distance_cache.clear()
 
     def _clear_grid(self) -> None:
         for row in self.grid:

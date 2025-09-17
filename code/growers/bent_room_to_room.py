@@ -58,12 +58,25 @@ class BentRoomCandidateFinder(CandidateFinder[BentRoomCandidate, BentRoomPlan]):
         ]
 
         candidates: List[BentRoomCandidate] = []
+        min_distance = context.config.min_intra_component_connection_distance
+
         for i, port_a_info in enumerate(records):
             for port_b_info in records[i + 1 :]:
                 room_a_idx = port_a_info["room_idx"]
                 room_b_idx = port_b_info["room_idx"]
-                if context.layout.rooms_share_component(room_a_idx, room_b_idx):
-                    continue
+                same_component = context.layout.rooms_share_component(
+                    room_a_idx, room_b_idx
+                )
+                if same_component:
+                    graph_distance = context.layout.graph_distance(
+                        ("room", room_a_idx),
+                        ("room", room_b_idx),
+                    )
+                    if graph_distance is None:
+                        print(f"Warning: graph distance None between room {room_a_idx} and {room_b_idx}")
+                        continue
+                    if graph_distance <= min_distance:
+                        continue
 
                 port_a = port_a_info["port"]
                 port_b = port_b_info["port"]
