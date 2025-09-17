@@ -34,6 +34,10 @@ def test_room_to_room_creates_four_way_intersection(make_context):
 
     created = run_room_to_room_grower(context)
 
+    # To view grid, uncomment this and run with pytest -s
+    #layout.draw_to_grid(draw_macrogrid=True)
+    #layout.print_grid(horizontal_sep="")
+
     assert created == 4
     assert len(layout.placed_rooms) == initial_rooms + 1
 
@@ -89,7 +93,6 @@ def test_room_to_corridor_creates_t_junction(make_context):
 
     initial_rooms = len(layout.placed_rooms)
 
-    random.seed(1)
     created = run_room_to_corridor_grower(context, fill_probability=1.0)
 
     assert created == 1
@@ -122,7 +125,6 @@ def test_bent_room_to_corridor_adds_bend_and_junction(make_context):
 
     initial_rooms = len(layout.placed_rooms)
 
-    random.seed(0)
     created = run_bent_room_to_corridor_grower(
         context,
         stop_after_first=True,
