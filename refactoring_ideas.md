@@ -2,13 +2,9 @@
 
 ## Data structures and models
 
-### Introduce a Point dataclass.
-
-Instead of passing Tuple[int, int] in many places, rather pass a new Point dataclass.
-
 ### Introduce a SpatialIndex class.
 
-Currently the code frequnetly rebuilds tile-to-room and tile-to-corridor lookups in `_build_room_tile_lookup` and `corridor_tile_index`. This is inefficient, and the logic is spread out.
+Currently the code frequently rebuilds tile-to-room and tile-to-corridor lookups in `_build_room_tile_lookup` and `corridor_tile_index`. This is inefficient, and the logic is spread out.
 
 Responsibilities:
 

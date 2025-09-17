@@ -17,6 +17,7 @@ from dungeon_constants import (
 )
 from dungeon_geometry import Direction, Rotation, TilePos, rotate_direction, VALID_ROTATIONS
 from dungeon_models import RoomKind, Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
+from spatial_index import SpatialIndex
 
 
 @dataclass(frozen=True)
@@ -66,14 +67,13 @@ class DungeonGenerator:
         self.room_components: List[int] = []
         self.corridors: List[Corridor] = []
         self.corridor_components: List[int] = []
-        self.corridor_tiles: Set[TilePos] = set()
-        self.corridor_tile_index: Dict[TilePos, List[int]] = {}
         self.room_corridor_links: Set[Tuple[int, int]] = set()
         self.grid = [[" " for _ in range(width)] for _ in range(height)]
         # Probability distribution for number of immediate direct links per room
         # Example: {0: 0.4, 1: 0.3, 2: 0.3}
         self.direct_link_counts_probs = dict(direct_link_counts_probs)
         self._next_component_id = 0
+        self.spatial_index = SpatialIndex()
 
     def _is_in_bounds(self, room: PlacedRoom) -> bool:
         bounds = room.get_bounds()
@@ -120,32 +120,16 @@ class DungeonGenerator:
         room.component_id = component_id
         self.placed_rooms.append(room)
         self.room_components.append(component_id)
+        room_index = len(self.placed_rooms) - 1
+        self.spatial_index.add_room(room_index, room)
 
     def _register_corridor(self, corridor: Corridor, component_id: int) -> int:
         corridor.component_id = component_id
         self.corridors.append(corridor)
         self.corridor_components.append(component_id)
         new_index = len(self.corridors) - 1
-        self._add_corridor_tiles(new_index)
+        self.spatial_index.add_corridor(new_index, corridor.geometry.tiles)
         return new_index
-
-    def _remove_corridor_tiles(self, corridor_idx: int) -> None:
-        corridor = self.corridors[corridor_idx]
-        for tile in corridor.geometry.tiles:
-            owners = self.corridor_tile_index.get(tile)
-            if owners is not None and corridor_idx in owners:
-                owners[:] = [idx for idx in owners if idx != corridor_idx]
-                if not owners:
-                    del self.corridor_tile_index[tile]
-            # Only remove from corridor_tiles if no other corridor uses it
-            if tile not in self.corridor_tile_index:
-                self.corridor_tiles.discard(tile)
-
-    def _add_corridor_tiles(self, corridor_idx: int) -> None:
-        corridor = self.corridors[corridor_idx]
-        for tile in corridor.geometry.tiles:
-            self.corridor_tiles.add(tile)
-            self.corridor_tile_index.setdefault(tile, []).append(corridor_idx)
 
     def _merge_components(self, *component_ids: int) -> int:
         valid_ids = {cid for cid in component_ids if cid >= 0}
@@ -361,24 +345,6 @@ class DungeonGenerator:
                 rooms_placed += self._spawn_direct_links_recursive(child)
         return rooms_placed
 
-    def _build_room_tile_lookup(self) -> Dict[TilePos, int]:
-        """Map each room tile to its owning room index for collision checks."""
-        tile_to_room: Dict[TilePos, int] = {}
-        for idx, room in enumerate(self.placed_rooms):
-            bounds = room.get_bounds()
-            for ty in range(bounds.y, bounds.max_y):
-                for tx in range(bounds.x, bounds.max_x):
-                    tile_to_room[TilePos(tx, ty)] = idx
-        return tile_to_room
-
-    def _build_corridor_tile_lookup(self) -> Dict[TilePos, List[int]]:
-        """Map corridor tiles to the corridors occupying them."""
-        tile_to_corridors: Dict[TilePos, List[int]] = {}
-        for corridor_idx, corridor in enumerate(self.corridors):
-            for tile in corridor.geometry.tiles:
-                tile_to_corridors.setdefault(tile, []).append(corridor_idx)
-        return tile_to_corridors
-
     @staticmethod
     def _port_exit_axis_value(port: WorldPort, axis_index: int) -> int:
         """Return the first tile outside the room along the port's facing axis."""
@@ -457,9 +423,14 @@ class DungeonGenerator:
         room_index_b: int,
         port_b: WorldPort,
         width: int,
-        tile_to_room: Dict[TilePos, int],
+        extra_room_tiles: Optional[Dict[TilePos, int]] = None,
     ) -> Optional[CorridorGeometry]:
         """Return the carved tiles for a straight corridor if it's valid."""
+        def room_owner(tile: TilePos) -> Optional[int]:
+            if extra_room_tiles and tile in extra_room_tiles:
+                return extra_room_tiles[tile]
+            return self.spatial_index.get_room_at(tile)
+
         dx1, dy1 = port_a.direction.dx, port_a.direction.dy
         dx2, dy2 = port_b.direction.dx, port_b.direction.dy
         if dx1 != -dx2 or dy1 != -dy2:
@@ -494,7 +465,7 @@ class DungeonGenerator:
                 if not (0 <= x < self.width and 0 <= y < self.height):
                     return None
                 tile = TilePos(x, y)
-                if tile in tile_to_room:
+                if room_owner(tile) is not None:
                     return None
                 tiles.append(tile)
 
@@ -512,7 +483,7 @@ class DungeonGenerator:
                 TilePos(tile.x, tile.y - 1),
             )
             for neighbor in neighbors:
-                neighbor_room = tile_to_room.get(neighbor)
+                neighbor_room = room_owner(neighbor)
                 if neighbor_room is None:
                     continue
                 allowed_axis = allowed_axis_by_room.get(neighbor_room)
@@ -608,12 +579,11 @@ class DungeonGenerator:
         for ty in range(bounds.y, bounds.max_y):
             for tx in range(bounds.x, bounds.max_x):
                 tile = TilePos(tx, ty)
-                if tile not in self.corridor_tiles:
+                owners = self.spatial_index.get_corridors_at(tile)
+                if not owners:
                     continue
-                owners = self.corridor_tile_index.get(tile, [])
-                if tile not in allowed_tiles:
-                    if not owners or any(owner not in allowed_corridors for owner in owners):
-                        return True, {}
+                if tile not in allowed_tiles and any(owner not in allowed_corridors for owner in owners):
+                    return True, {}
                 for owner in owners:
                     if owner in allowed_corridors:
                         overlaps_by_corridor[owner].add(tile)
@@ -804,7 +774,7 @@ class DungeonGenerator:
         for ty in range(bounds.y, bounds.max_y):
             for tx in range(bounds.x, bounds.max_x):
                 tile = TilePos(tx, ty)
-                corridors = self.corridor_tile_index.get(tile)
+                corridors = self.spatial_index.get_corridors_at(tile)
                 if corridors:
                     overlaps.append((tile, list(corridors)))
         if overlaps:
@@ -922,7 +892,7 @@ class DungeonGenerator:
             return connected_indices
 
         # Remove the old geometry before replacing it.
-        self._remove_corridor_tiles(corridor_idx)
+        self.spatial_index.remove_corridor(corridor_idx)
 
         primary_end, primary_segment = segments[0]
         corridor.room_a_index = primary_segment.room_a_index
@@ -933,7 +903,7 @@ class DungeonGenerator:
         corridor.geometry = primary_segment.geometry
         corridor.component_id = component_id
         self.corridor_components[corridor_idx] = component_id
-        self._add_corridor_tiles(corridor_idx)
+        self.spatial_index.add_corridor(corridor_idx, corridor.geometry.tiles)
         connected_indices.append(corridor_idx)
 
         for _, segment in segments[1:]:
@@ -947,14 +917,15 @@ class DungeonGenerator:
         room_index: int,
         port: WorldPort,
         width: int,
-        tile_to_room: Dict[TilePos, int],
-        tile_to_corridors: Dict[TilePos, List[int]],
     ) -> Optional[Tuple[CorridorGeometry, int, Tuple[TilePos, ...]]]:
         """Attempt to carve a straight corridor from a port to an existing corridor."""
         axis_index = 0 if port.direction.dx != 0 else 1
         direction = port.direction.dx if axis_index == 0 else port.direction.dy
         if direction == 0:
             return None
+
+        def room_owner(tile: TilePos) -> Optional[int]:
+            return self.spatial_index.get_room_at(tile)
 
         cross_center = port.pos[1] if axis_index == 0 else port.pos[0]
         cross_coords = self._corridor_cross_coords(cross_center, width)
@@ -977,11 +948,11 @@ class DungeonGenerator:
                     return None
                 tiles_for_step.append(TilePos(x, y))
 
-            all_corridor = all(tile in self.corridor_tiles for tile in tiles_for_step)
+            all_corridor = all(self.spatial_index.has_corridor_at(tile) for tile in tiles_for_step)
             if all_corridor:
                 intersecting_indices: Optional[Set[int]] = None
                 for tile in tiles_for_step:
-                    indices = set(tile_to_corridors.get(tile, []))
+                    indices = set(self.spatial_index.get_corridors_at(tile))
                     if not indices:
                         intersecting_indices = set()
                         break
@@ -1036,11 +1007,11 @@ class DungeonGenerator:
                 )
                 return geometry, chosen_idx, tuple(sorted(intersection_tiles))
 
-            if any(tile in self.corridor_tiles for tile in tiles_for_step):
+            if any(self.spatial_index.has_corridor_at(tile) for tile in tiles_for_step):
                 return None
 
             for tile in tiles_for_step:
-                if tile in tile_to_room:
+                if room_owner(tile) is not None:
                     return None
                 neighbors = (
                     TilePos(tile.x + 1, tile.y),
@@ -1049,7 +1020,7 @@ class DungeonGenerator:
                     TilePos(tile.x, tile.y - 1),
                 )
                 for neighbor in neighbors:
-                    neighbor_room = tile_to_room.get(neighbor)
+                    neighbor_room = room_owner(neighbor)
                     if neighbor_room is None:
                         continue
                     if neighbor_room != room_index:
@@ -1117,7 +1088,6 @@ class DungeonGenerator:
         horizontal_dir = horizontal_info["port"].direction
         vertical_dir = vertical_info["port"].direction
 
-        tile_to_room = self._build_room_tile_lookup()
         candidate_room_index = len(self.placed_rooms)
 
         bend_templates = list(self.bend_room_templates)
@@ -1165,20 +1135,18 @@ class DungeonGenerator:
 
                             bend_bounds = placed_bend.get_bounds()
                             overlaps_corridor = False
+                            extra_room_tiles: Dict[TilePos, int] = {}
                             for ty in range(bend_bounds.y, bend_bounds.max_y):
                                 for tx in range(bend_bounds.x, bend_bounds.max_x):
-                                    if TilePos(tx, ty) in self.corridor_tiles:
+                                    tile = TilePos(tx, ty)
+                                    if self.spatial_index.has_corridor_at(tile):
                                         overlaps_corridor = True
                                         break
+                                    extra_room_tiles[tile] = candidate_room_index
                                 if overlaps_corridor:
                                     break
                             if overlaps_corridor:
                                 continue
-
-                            tile_map_with_bend = dict(tile_to_room)
-                            for ty in range(bend_bounds.y, bend_bounds.max_y):
-                                for tx in range(bend_bounds.x, bend_bounds.max_x):
-                                    tile_map_with_bend[TilePos(tx, ty)] = candidate_room_index
 
                             bend_world_ports = placed_bend.get_world_ports()
                             bend_world_h = bend_world_ports[bend_h_idx]
@@ -1193,7 +1161,7 @@ class DungeonGenerator:
                                 candidate_room_index,
                                 bend_world_h,
                                 width,
-                                tile_map_with_bend,
+                                extra_room_tiles,
                             )
                             if geom_h is None:
                                 continue
@@ -1204,14 +1172,14 @@ class DungeonGenerator:
                                 candidate_room_index,
                                 bend_world_v,
                                 width,
-                                tile_map_with_bend,
+                                extra_room_tiles,
                             )
                             if geom_v is None:
                                 continue
 
-                            if any(tile in self.corridor_tiles for tile in geom_h.tiles):
+                            if any(self.spatial_index.has_corridor_at(tile) for tile in geom_h.tiles):
                                 continue
-                            if any(tile in self.corridor_tiles for tile in geom_v.tiles):
+                            if any(self.spatial_index.has_corridor_at(tile) for tile in geom_v.tiles):
                                 continue
 
                             tiles_h = set(geom_h.tiles)
@@ -1243,7 +1211,6 @@ class DungeonGenerator:
             raise ValueError("ERROR: no placed rooms.")
 
         initial_corridor_count = len(self.corridors)
-        tile_to_room = self._build_room_tile_lookup()
         room_world_ports = [room.get_world_ports() for room in self.placed_rooms]
         available_ports = self._list_available_ports(room_world_ports)
 
@@ -1288,7 +1255,7 @@ class DungeonGenerator:
                         room_b_idx,
                         world_port_b,
                         width,
-                        tile_to_room,
+                        None,
                     )
                     if geometry is not None:
                         viable_options.append((width, geometry))
@@ -1300,7 +1267,7 @@ class DungeonGenerator:
 
                 overlap_map: Dict[int, List[TilePos]] = {}
                 for tile in geometry.tiles:
-                    for existing_idx in self.corridor_tile_index.get(tile, []):
+                    for existing_idx in self.spatial_index.get_corridors_at(tile):
                         overlap_map.setdefault(existing_idx, []).append(tile)
 
                 if overlap_map:
@@ -1531,7 +1498,6 @@ class DungeonGenerator:
             print(f"Easylink step {step_num}: skipped - no existing corridors to join.")
             return 0
 
-        tile_to_room = self._build_room_tile_lookup()
         room_world_ports = [room.get_world_ports() for room in self.placed_rooms]
 
         existing_room_corridor_pairs = set(self.room_corridor_links)
@@ -1542,8 +1508,6 @@ class DungeonGenerator:
         created = 0
         junction_rooms_created = 0
         for room_idx, port_idx, world_port in available_ports:
-            tile_to_corridors = self._build_corridor_tile_lookup()
-
             width_options = list(world_port.widths)
             random.shuffle(width_options)
 
@@ -1553,8 +1517,6 @@ class DungeonGenerator:
                     room_idx,
                     world_port,
                     width,
-                    tile_to_room,
-                    tile_to_corridors,
                 )
                 if result is not None:
                     geometry, target_corridor_idx, junction_tiles = result
