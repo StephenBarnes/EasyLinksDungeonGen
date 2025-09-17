@@ -22,9 +22,20 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
-from geometry import TilePos, VALID_ROTATIONS
+from geometry import Direction, Rotation, TilePos, VALID_ROTATIONS
 from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, RoomTemplate, WorldPort
 
 from growers.base import (
@@ -61,6 +72,14 @@ class BentRoomToCorridorPlan:
     requirement_mapping: Dict[str, int]
     port_mapping: Dict[int, int]
     junction_room: PlacedRoom
+
+
+@dataclass(frozen=True)
+class _BendRotationCache:
+    template: RoomTemplate
+    rotation: Rotation
+    ports: Tuple[WorldPort, ...]
+    ports_by_direction: Mapping[Direction, Tuple[int, ...]]
 
 
 class BentRoomToCorridorCandidateFinder(
@@ -105,6 +124,7 @@ class BentRoomToCorridorGeometryPlanner(
     def __init__(self, max_room_distance: int = 8, fill_probability: float = 1.0) -> None:
         self.max_room_distance = max_room_distance
         self.fill_probability = fill_probability
+        self._bend_rotation_cache: Dict[Tuple[int, Rotation], _BendRotationCache] = {}
 
     def plan(
         self,
@@ -124,6 +144,7 @@ class BentRoomToCorridorGeometryPlanner(
             return None
 
         existing_links = set(context.layout.room_corridor_links)
+        junction_templates = context.get_room_templates(RoomKind.T_JUNCTION)
 
         for width in width_options:
             plan = self._build_plan_for_width(
@@ -131,11 +152,37 @@ class BentRoomToCorridorGeometryPlanner(
                 candidate,
                 width,
                 bend_templates,
+                junction_templates,
                 existing_links,
             )
             if plan is not None:
                 return plan
         return None
+
+    def _get_bend_rotation_cache(
+        self,
+        template: RoomTemplate,
+        rotation: Rotation,
+    ) -> _BendRotationCache:
+        key = (id(template), rotation)
+        cached = self._bend_rotation_cache.get(key)
+        if cached is not None:
+            return cached
+
+        base_room = PlacedRoom(template, 0, 0, rotation)
+        ports = tuple(base_room.get_world_ports())
+        direction_map: Dict[Direction, List[int]] = {}
+        for idx, port in enumerate(ports):
+            direction_map.setdefault(port.direction, []).append(idx)
+
+        cached = _BendRotationCache(
+            template=template,
+            rotation=base_room.rotation,
+            ports=ports,
+            ports_by_direction={direction: tuple(indices) for direction, indices in direction_map.items()},
+        )
+        self._bend_rotation_cache[key] = cached
+        return cached
 
     def _build_plan_for_width(
         self,
@@ -143,6 +190,7 @@ class BentRoomToCorridorGeometryPlanner(
         candidate: BentRoomToCorridorCandidate,
         width: int,
         bend_templates: Sequence[RoomTemplate],
+        junction_templates: Sequence[RoomTemplate],
         existing_links: Set[Tuple[int, int]],
     ) -> Optional[BentRoomToCorridorPlan]:
         """Search bend templates/rotations to connect the room at the requested width."""
@@ -158,17 +206,15 @@ class BentRoomToCorridorGeometryPlanner(
 
         distances = list(range(2, self.max_room_distance + 1))
         random.shuffle(distances)
+        perpendicular_dirs = tuple(dir_ for dir_ in Direction if dir_.dot(direction) == 0)
 
         for template in bend_templates:
             for rotation in VALID_ROTATIONS:
-                # TODO: cache rotated bend templates and port groupings to remove
-                # repeated `PlacedRoom` instantiation and port classification.
-                temp_room = PlacedRoom(template, 0, 0, rotation)
-                rotated_ports = temp_room.get_world_ports()
+                rotation_cache = self._get_bend_rotation_cache(template, rotation)
                 matching_indices = [
-                    (idx, port)
-                    for idx, port in enumerate(rotated_ports)
-                    if port.direction == direction.opposite() and width in port.widths
+                    (idx, rotation_cache.ports[idx])
+                    for idx in rotation_cache.ports_by_direction.get(direction.opposite(), ())
+                    if width in rotation_cache.ports[idx].widths
                 ]
                 if not matching_indices:
                     continue
@@ -176,9 +222,9 @@ class BentRoomToCorridorGeometryPlanner(
                 matching_index_set = {idx for idx, _ in matching_indices}
                 branch_indices = [
                     (idx, port)
-                    for idx, port in enumerate(rotated_ports)
+                    for idx, port in enumerate(rotation_cache.ports)
                     if idx not in matching_index_set
-                    and port.direction.dot(direction) == 0
+                    and port.direction in perpendicular_dirs
                     and width in port.widths
                 ]
                 if not branch_indices:
@@ -190,7 +236,7 @@ class BentRoomToCorridorGeometryPlanner(
                             context,
                             candidate,
                             width,
-                            temp_room,
+                            rotation_cache,
                             match_idx,
                             match_port,
                             branch_idx,
@@ -200,6 +246,7 @@ class BentRoomToCorridorGeometryPlanner(
                             candidate_exit_axis,
                             bend_room_index,
                             distances,
+                            junction_templates,
                             existing_links,
                         )
                         if plan is not None:
@@ -211,7 +258,7 @@ class BentRoomToCorridorGeometryPlanner(
         context: GrowerContext,
         candidate: BentRoomToCorridorCandidate,
         width: int,
-        bend_room_template: PlacedRoom,
+        bend_rotation_cache: _BendRotationCache,
         match_idx: int,
         match_port: WorldPort,
         branch_idx: int,
@@ -221,6 +268,7 @@ class BentRoomToCorridorGeometryPlanner(
         candidate_exit_axis: int,
         bend_room_index: int,
         distances: Sequence[int],
+        junction_templates: Sequence[RoomTemplate],
         existing_links: Set[Tuple[int, int]],
     ) -> Optional[BentRoomToCorridorPlan]:
         """Place the bend room and build corridors if the spatial layout permits it."""
@@ -256,10 +304,10 @@ class BentRoomToCorridorGeometryPlanner(
                 tx, ty = perp_translation, axis_translation
 
             placed_bend = PlacedRoom(
-                bend_room_template.template,
+                bend_rotation_cache.template,
                 tx,
                 ty,
-                bend_room_template.rotation,
+                bend_rotation_cache.rotation,
             )
             if not context.layout.is_valid_placement(placed_bend):
                 continue
@@ -307,6 +355,7 @@ class BentRoomToCorridorGeometryPlanner(
                 bend_branch_port,
                 geometry_room_to_bend,
                 extra_room_tiles,
+                junction_templates,
                 existing_links,
             )
             if branch_plan is None:
@@ -381,6 +430,7 @@ class BentRoomToCorridorGeometryPlanner(
         bend_branch_port: WorldPort,
         geometry_room_to_bend: CorridorGeometry,
         extra_room_tiles: Dict[TilePos, int],
+        junction_templates: Sequence[RoomTemplate],
         existing_links: Set[Tuple[int, int]],
     ) -> Optional[_BranchPlan]:
         """Attach the bend to a corridor by inserting a T-junction and constraints."""
