@@ -6,7 +6,7 @@ import itertools
 import math
 import random
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from dungeon_config import DungeonConfig
@@ -17,6 +17,22 @@ from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, RoomTemplat
 
 
 @dataclass
+class GrowerSeenState:
+    """Tracks which layout entities a grower has inspected so far."""
+
+    seen_rooms: Set[int] = field(default_factory=set)
+    seen_corridors: Set[int] = field(default_factory=set)
+    run_count: int = 0
+
+    def note_seen(self, room_indices: Iterable[int], corridor_indices: Iterable[int]) -> None:
+        self.seen_rooms.update(idx for idx in room_indices if idx is not None)
+        self.seen_corridors.update(idx for idx in corridor_indices if idx is not None)
+
+    def register_run(self) -> None:
+        self.run_count += 1
+
+
+@dataclass
 class GrowerContext:
     """Encapsulates shared state and helpers for grower implementations."""
 
@@ -24,6 +40,10 @@ class GrowerContext:
     layout: DungeonLayout
     room_templates: Sequence[RoomTemplate]
     room_templates_by_kind: Mapping[RoomKind, Sequence[RoomTemplate]]
+    grower_seen_state: Dict[str, GrowerSeenState] = field(default_factory=dict)
+
+    def get_grower_seen_state(self, grower_name: str) -> GrowerSeenState:
+        return self.grower_seen_state.setdefault(grower_name, GrowerSeenState())
 
     def get_room_templates(self, kind: RoomKind) -> Sequence[RoomTemplate]:
         """Return templates registered for the requested room kind."""

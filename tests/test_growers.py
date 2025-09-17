@@ -152,3 +152,36 @@ def test_bent_room_to_corridor_adds_bend_and_junction(make_context):
         if bend_room.index in (corridor.room_a_index, corridor.room_b_index)
     ]
     assert len(bend_links) >= 2
+
+
+def test_grower_seen_state_tracks_runs(make_context):
+    random.seed(0)
+    context = make_context()
+    layout = context.layout
+    template = _room_template_by_name(context, "room_8x8_4doors")
+
+    for x, y in ((2, 10), (30, 10), (16, 2), (16, 26)):
+        _place_room(layout, template, x, y)
+
+    run_room_to_room_grower(context)
+    state = context.get_grower_seen_state("room_to_room")
+
+    assert state.run_count == 1
+    room_indices = {room.index for room in layout.placed_rooms if room.index is not None}
+    corridor_indices = {
+        corridor.index for corridor in layout.corridors if corridor.index is not None
+    }
+    assert state.seen_rooms == room_indices
+    assert state.seen_corridors == corridor_indices
+
+    run_room_to_room_grower(context)
+    state = context.get_grower_seen_state("room_to_room")
+    assert state.run_count == 2
+    updated_room_indices = {
+        room.index for room in layout.placed_rooms if room.index is not None
+    }
+    updated_corridor_indices = {
+        corridor.index for corridor in layout.corridors if corridor.index is not None
+    }
+    assert state.seen_rooms == updated_room_indices
+    assert state.seen_corridors == updated_corridor_indices

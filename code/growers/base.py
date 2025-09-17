@@ -6,7 +6,7 @@ from typing import Generic, Iterable, Optional, TypeVar
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from grower_context import GrowerContext
+    from grower_context import GrowerContext, GrowerSeenState
 
 
 C = TypeVar("C")
@@ -67,6 +67,8 @@ class DungeonGrower(Generic[C, P]):
 
     def run(self, context: GrowerContext) -> int:
         """Execute the grower pipeline and return the aggregate result."""
+        seen_state = context.get_grower_seen_state(self.name)
+        self._record_seen_layout(context, seen_state)
         for candidate in self.candidate_finder.find_candidates(context):
             plan = self.geometry_planner.plan(context, candidate)
             if plan is None:
@@ -76,4 +78,19 @@ class DungeonGrower(Generic[C, P]):
                 self.candidate_finder.on_success(context, candidate, plan)
             if result.stop:
                 break
-        return self.applier.finalize(context)
+        try:
+            return self.applier.finalize(context)
+        finally:
+            self._record_seen_layout(context, seen_state)
+            seen_state.register_run()
+
+    def _record_seen_layout(
+        self,
+        context: GrowerContext,
+        seen_state: "GrowerSeenState",
+    ) -> None:
+        rooms = (room.index for room in context.layout.placed_rooms if room.index is not None)
+        corridors = (
+            corridor.index for corridor in context.layout.corridors if corridor.index is not None
+        )
+        seen_state.note_seen(rooms, corridors)
