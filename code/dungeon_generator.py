@@ -8,6 +8,7 @@ from dungeon_config import DungeonConfig
 from grower_context import GrowerContext
 from models import RoomKind, RoomTemplate
 from growers import (
+    run_bent_room_to_corridor_grower,
     run_bent_room_to_room_grower,
     run_room_to_corridor_grower,
     run_room_to_room_grower,
@@ -53,14 +54,17 @@ class DungeonGenerator:
             room_templates_by_kind=self.room_templates_by_kind,
         )
 
-        # Step 2: Run our growers repeatedly.
+        # Step 2: Run our growers repeatedly. Re-run simpler rules until they terminate.
         run_room_to_room_grower(context)
         num_created = 1
         while num_created > 0:
             num_created = run_room_to_corridor_grower(context, fill_probability=1)
             num_created += run_room_to_room_grower(context)
         num_created = run_bent_room_to_room_grower(context)
-        # Re-run other growers, if we created new rooms or corridors.
+        while num_created > 0:
+            num_created = run_room_to_room_grower(context)
+            num_created += run_room_to_corridor_grower(context, fill_probability=1)
+        num_created = run_bent_room_to_corridor_grower(context, fill_probability=1)
         while num_created > 0:
             num_created = run_room_to_room_grower(context)
             num_created += run_room_to_corridor_grower(context, fill_probability=1)
