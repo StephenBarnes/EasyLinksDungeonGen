@@ -1,4 +1,4 @@
-"""Context object providing shared utilities for dungeon growers."""
+"""Context object providing shared state and helper utilities for dungeon grower implementations."""
 
 from __future__ import annotations
 

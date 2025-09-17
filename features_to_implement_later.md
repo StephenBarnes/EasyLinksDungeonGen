@@ -1,3 +1,9 @@
+- Track graph of rooms and corridors, so that we can figure out whether we're creating a short cycle. This should be in dungeon_layout probably. And define a function to get the graph distance from any given corridor or room to any other corridor or room.
+
+- Modify current bent_room_to_room to not only make bent corridors between different components, but rather to also allow within-component bent connections, if doing so doesn't create a short cycle.
+
+- Add a grower for bent room-to-corridor. Possibly factor out some logic in bent_room_to_room and put it in grower_context.
+
 - Implement remaining growers, after refactoring growers.
 	- Add a grower that splits up overly long corridors, by placing a new room kind (marked as RoomKind.THROUGH) in the middle somewhere. Unclear where this should go in the ordering of steps.
 	- Add a grower that tries to randomly rotate rooms that currently have none of their door ports connected; check if the rotated version's dimensions still fit. Then try to apply other growers again and see if they create new edges.

@@ -257,7 +257,7 @@ class CorridorGeometry:
     """Holds the tile layout for a corridor between two ports."""
 
     tiles: Tuple[TilePos, ...]
-    axis_index: Optional[int]  # 0 for horizontal, 1 for vertical, None for joints
+    axis_index: int  # 0 for horizontal, 1 for vertical
     port_axis_values: Tuple[int, int]
     cross_coords: Tuple[int, ...] = ()
 
