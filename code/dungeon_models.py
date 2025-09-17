@@ -37,9 +37,6 @@ class PortTemplate:
     widths: FrozenSet[int]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.direction, Direction):
-            self.direction = Direction.from_tuple(tuple(int(v) for v in self.direction))
-
         direction = self.direction
         dx, dy = direction.dx, direction.dy
         px, py = (float(self.pos[0]), float(self.pos[1]))
@@ -83,14 +80,6 @@ class RoomTemplate:
         """Run several validations to check that our room templates and their ports obey constraints."""
         if self.size[0] <= 0 or self.size[1] <= 0:
             raise ValueError(f"Room {self.name} must have positive non-zero dimensions")
-
-        if self.preferred_center_facing_dir is not None:
-            direction = (
-                self.preferred_center_facing_dir
-                if isinstance(self.preferred_center_facing_dir, Direction)
-                else Direction.from_tuple(tuple(int(v) for v in self.preferred_center_facing_dir))
-            )
-            self.preferred_center_facing_dir = direction
 
         if not self.ports:
             raise ValueError(f"Room {self.name} must define at least one port")

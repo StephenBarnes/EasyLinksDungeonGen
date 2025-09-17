@@ -34,7 +34,8 @@ class Rotation(Enum):
     def all(cls) -> Tuple[Rotation, ...]:
         return tuple(cls)
 
-VALID_ROTATIONS = Rotation.all()
+VALID_ROTATIONS = tuple(Rotation)
+
 
 class Direction(Enum):
     """Cardinal directions with unit vectors on the tile grid."""
@@ -70,17 +71,8 @@ class Direction(Enum):
         except ValueError as exc:
             raise ValueError(f"Unsupported direction {value}") from exc
 
-    @classmethod
-    def all(cls) -> Tuple[Direction, ...]:
-        return tuple(cls)
-    
     def dot(self, other: Direction) -> int:
         return self.dx * other.dx + self.dy * other.dy
-
-VALID_DIRECTIONS = tuple(Direction)
-
-RotationLike = Union[int, Rotation]
-DirectionLike = Union[Tuple[int, int], Direction]
 
 
 @dataclass(frozen=True, order=True)
@@ -175,20 +167,7 @@ def port_tiles_from_world_pos(world_x: float, world_y: float) -> Tuple[TilePos, 
     raise ValueError(f"Port center must have exactly one half coordinate, got {(world_x, world_y)}")
 
 
-def _ensure_rotation(rotation: RotationLike) -> Rotation:
-    if isinstance(rotation, Rotation):
-        return rotation
-    return Rotation.from_degrees(int(rotation))
-
-
-def _ensure_direction(direction: DirectionLike) -> Direction:
-    if isinstance(direction, Direction):
-        return direction
-    return Direction.from_tuple(direction)
-
-
-def rotate_point(px: float, py: float, width: int, height: int, rotation: RotationLike) -> Tuple[float, float]:
-    rotation = _ensure_rotation(rotation)
+def rotate_point(px: float, py: float, width: int, height: int, rotation: Rotation) -> Tuple[float, float]:
     if rotation is Rotation.DEG_0:
         return px, py
     if rotation is Rotation.DEG_90:
@@ -200,9 +179,7 @@ def rotate_point(px: float, py: float, width: int, height: int, rotation: Rotati
     raise AssertionError(f"Unhandled rotation {rotation}")
 
 
-def rotate_direction(direction: DirectionLike, rotation: RotationLike) -> Direction:
-    direction = _ensure_direction(direction)
-    rotation = _ensure_rotation(rotation)
+def rotate_direction(direction: Direction, rotation: Rotation) -> Direction:
     dx, dy = direction.vector
     if rotation is Rotation.DEG_0:
         return direction
