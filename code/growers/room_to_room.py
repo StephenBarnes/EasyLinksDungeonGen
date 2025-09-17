@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
 from geometry import TilePos
-from models import Corridor, CorridorGeometry, PlacedRoom, WorldPort
+from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, WorldPort
 
 from growers.base import (
     CandidateFinder,
@@ -268,7 +268,7 @@ class RoomToRoomGeometryPlanner(GeometryPlanner[RoomToRoomCandidate, RoomToRoomP
 
         placement = context.attempt_place_special_room(
             requirements,
-            context.four_way_room_templates,
+            context.get_room_templates(RoomKind.FOUR_WAY),
             allowed_overlap_tiles=set(intersection_tiles),
             allowed_overlap_corridors={existing_idx},
         )

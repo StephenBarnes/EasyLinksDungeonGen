@@ -7,13 +7,13 @@ import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from dungeon_config import DungeonConfig
 from dungeon_layout import DungeonLayout
 from geometry import Direction, TilePos, VALID_ROTATIONS
 from growers.port_requirement import PortRequirement
-from models import Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
+from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, RoomTemplate, WorldPort
 
 
 @dataclass
@@ -23,10 +23,11 @@ class GrowerContext:
     config: DungeonConfig
     layout: DungeonLayout
     room_templates: Sequence[RoomTemplate]
-    standalone_room_templates: Sequence[RoomTemplate]
-    bend_room_templates: Sequence[RoomTemplate]
-    t_junction_room_templates: Sequence[RoomTemplate]
-    four_way_room_templates: Sequence[RoomTemplate]
+    room_templates_by_kind: Mapping[RoomKind, Sequence[RoomTemplate]]
+
+    def get_room_templates(self, kind: RoomKind) -> Sequence[RoomTemplate]:
+        """Return templates registered for the requested room kind."""
+        return self.room_templates_by_kind.get(kind, ())
 
     # ------------------------------------------------------------------
     # Port and corridor utilities

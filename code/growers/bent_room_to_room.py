@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
 from geometry import TilePos, VALID_ROTATIONS
-from models import Corridor, CorridorGeometry, PlacedRoom, WorldPort
+from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, WorldPort
 
 from growers.base import (
     CandidateFinder,
@@ -117,9 +117,6 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
         context: GrowerContext,
         candidate: BentRoomCandidate,
     ) -> Optional[BentRoomPlan]:
-        if not context.bend_room_templates:
-            return None
-
         room_a = context.layout.placed_rooms[candidate.room_a_idx]
         room_b = context.layout.placed_rooms[candidate.room_b_idx]
         port_a = room_a.get_world_ports()[candidate.port_a_idx]
@@ -153,7 +150,9 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
 
         candidate_room_index = len(context.layout.placed_rooms)
 
-        bend_templates = list(context.bend_room_templates)
+        bend_templates = list(context.get_room_templates(RoomKind.BEND))
+        if not bend_templates:
+            return None
         random.shuffle(bend_templates)
 
         for width in width_options:
@@ -328,7 +327,7 @@ def run_bent_room_to_room_grower(context: GrowerContext) -> int:
     if len(context.layout.placed_rooms) < 2:
         print("Bent-room-to-room grower: skipped - not enough rooms to connect.")
         return 0
-    if not context.bend_room_templates:
+    if not context.get_room_templates(RoomKind.BEND):
         print("Bent-room-to-room grower: skipped - no bend room templates available.")
         return 0
     if context.layout.component_manager.has_single_component():

@@ -25,10 +25,12 @@ class DungeonGenerator:
         self.layout = DungeonLayout(config)
 
         self.room_templates = list(config.room_templates)
-        self.standalone_room_templates = [rt for rt in self.room_templates if RoomKind.STANDALONE in rt.kinds]
-        self.bend_room_templates = [rt for rt in self.room_templates if RoomKind.BEND in rt.kinds]
-        self.t_junction_room_templates = [rt for rt in self.room_templates if RoomKind.T_JUNCTION in rt.kinds]
-        self.four_way_room_templates = [rt for rt in self.room_templates if RoomKind.FOUR_WAY in rt.kinds]
+        self.room_templates_by_kind: Dict[RoomKind, List[RoomTemplate]] = {
+            kind: [] for kind in RoomKind
+        }
+        for template in self.room_templates:
+            for kind in template.kinds:
+                self.room_templates_by_kind[kind].append(template)
 
     def generate(self) -> None:
         """Generates the dungeon, by invoking dungeon-growers."""
@@ -43,10 +45,7 @@ class DungeonGenerator:
             config=self.config,
             layout=self.layout,
             room_templates=self.room_templates,
-            standalone_room_templates=self.standalone_room_templates,
-            bend_room_templates=self.bend_room_templates,
-            t_junction_room_templates=self.t_junction_room_templates,
-            four_way_room_templates=self.four_way_room_templates,
+            room_templates_by_kind=self.room_templates_by_kind,
         )
 
         # Step 2: Run our growers repeatedly.
@@ -188,6 +187,7 @@ class DungeonGenerator:
         anchor_world_ports = anchor_room.get_world_ports()
         available_anchor_indices = anchor_room.get_available_port_indices()
         random.shuffle(available_anchor_indices)
+        standalone_templates = self.room_templates_by_kind[RoomKind.STANDALONE]
 
         # Try each available port in random order
         for anchor_idx in available_anchor_indices:
@@ -200,7 +200,7 @@ class DungeonGenerator:
             # Candidate attempt loop
             for _ in range(self.config.max_connected_placement_attempts):
                 template = random.choices(
-                    self.standalone_room_templates, weights=[rt.direct_weight for rt in self.standalone_room_templates]
+                    standalone_templates, weights=[rt.direct_weight for rt in standalone_templates]
                 )[0]
                 rotation = Rotation.random()
                 temp_room = PlacedRoom(template, 0, 0, rotation)
@@ -244,6 +244,7 @@ class DungeonGenerator:
         print(f"Attempting to place {self.config.num_rooms_to_place} rooms...")
         placed_count = 0
         consecutive_limit_exceeded = 0
+        standalone_templates = self.room_templates_by_kind[RoomKind.STANDALONE]
 
         for root_room_index in range(self.config.num_rooms_to_place):
             if placed_count >= self.config.num_rooms_to_place:
@@ -261,16 +262,16 @@ class DungeonGenerator:
                 placement_category, side_proximities = self._describe_macro_position(macro_x, macro_y)
 
                 if placement_category == "middle":
-                    template_weights = [rt.root_weight_middle for rt in self.standalone_room_templates]
+                    template_weights = [rt.root_weight_middle for rt in standalone_templates]
                 elif placement_category == "edge":
-                    template_weights = [rt.root_weight_edge for rt in self.standalone_room_templates]
+                    template_weights = [rt.root_weight_edge for rt in standalone_templates]
                 else:
-                    template_weights = [rt.root_weight_intermediate for rt in self.standalone_room_templates]
+                    template_weights = [rt.root_weight_intermediate for rt in standalone_templates]
 
                 if not any(weight > 0 for weight in template_weights):
-                    template_weights = [1.0 for _ in self.standalone_room_templates]
+                    template_weights = [1.0 for _ in standalone_templates]
 
-                template = random.choices(self.standalone_room_templates, weights=template_weights)[0]
+                template = random.choices(standalone_templates, weights=template_weights)[0]
                 rotation = self._select_root_rotation(template, placement_category, side_proximities)
                 candidate_room = self._build_root_room_candidate(template, rotation, macro_x, macro_y)
                 if self.layout.is_valid_placement(candidate_room):
