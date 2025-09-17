@@ -30,7 +30,7 @@ The methods `create_easy_links`, `create_easy_t_junctions`, `create_bent_room_li
 
 Refactoring suggestion: abstract this pattern.
 
-We could create a generic "`GeometryCreator`" that takes a `CandidateFinder`, a `GeometryPlanner`, and an `Applier`.
+We could create a generic "`GeometryBuilder`" that takes a `CandidateFinder`, a `GeometryPlanner`, and an `Applier`.
 
 * For `create_easy_links`, the `CandidateFinder` would yield pairs of opposing ports.
 * For `create_easy_t_junctions`, it would yield pairs of (port, corridor).

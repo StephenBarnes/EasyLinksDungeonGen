@@ -10,12 +10,7 @@ from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from component_manager import ComponentManager
-from dungeon_constants import (
-    DOOR_MACRO_ALIGNMENT_OFFSETS,
-    MACRO_GRID_SIZE,
-    MAX_CONNECTED_PLACEMENT_ATTEMPTS,
-    MAX_CONSECUTIVE_LIMIT_FAILURES,
-)
+from dungeon_config import DungeonConfig
 from dungeon_geometry import Direction, Rotation, TilePos, rotate_direction, VALID_ROTATIONS
 from dungeon_models import RoomKind, Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
 from spatial_index import SpatialIndex
@@ -41,38 +36,34 @@ class PortRequirement:
 class DungeonGenerator:
     """Manages the overall process of generating a dungeon floor layout."""
 
-    def __init__(
-        self,
-        width: int,
-        height: int,
-        room_templates: List[RoomTemplate],
-        direct_link_counts_probs: dict[int, float],
-        num_rooms_to_place: int,
-        min_room_separation: int,
-        min_rooms_required: int = 6,
-    ) -> None:
-        self.width = width
-        self.height = height
+    def __init__(self, config: DungeonConfig) -> None:
+        self.config = config
+        self.width = config.width
+        self.height = config.height
+        self.macro_grid_size = config.macro_grid_size
 
-        self.room_templates = list(room_templates)
-        self.standalone_room_templates = list(rt for rt in room_templates if RoomKind.STANDALONE in rt.kinds)
-        self.bend_room_templates = list(rt for rt in room_templates if RoomKind.BEND in rt.kinds)
-        self.t_junction_room_templates = list(rt for rt in room_templates if RoomKind.T_JUNCTION in rt.kinds)
-        self.four_way_room_templates = list(rt for rt in room_templates if RoomKind.FOUR_WAY in rt.kinds)
+        self.room_templates = list(config.room_templates)
+        self.standalone_room_templates = [rt for rt in self.room_templates if RoomKind.STANDALONE in rt.kinds]
+        self.bend_room_templates = [rt for rt in self.room_templates if RoomKind.BEND in rt.kinds]
+        self.t_junction_room_templates = [rt for rt in self.room_templates if RoomKind.T_JUNCTION in rt.kinds]
+        self.four_way_room_templates = [rt for rt in self.room_templates if RoomKind.FOUR_WAY in rt.kinds]
 
-        self.num_rooms_to_place = num_rooms_to_place
+        self.num_rooms_to_place = config.num_rooms_to_place
         # Minimum empty tiles between room bounding boxes, unless they connect at ports.
-        self.min_room_separation = min_room_separation
-        self.min_rooms_required = min_rooms_required
+        self.min_room_separation = config.min_room_separation
+        self.min_rooms_required = config.min_rooms_required
         self.placed_rooms: List[PlacedRoom] = []
         self.corridors: List[Corridor] = []
         self.room_corridor_links: Set[Tuple[int, int]] = set()
-        self.grid = [[" " for _ in range(width)] for _ in range(height)]
+        self.grid = [[" " for _ in range(self.width)] for _ in range(self.height)]
         # Probability distribution for number of immediate direct links per room
         # Example: {0: 0.4, 1: 0.3, 2: 0.3}
-        self.direct_link_counts_probs = dict(direct_link_counts_probs)
+        self.direct_link_counts_probs = dict(config.direct_link_counts_probs)
         self.component_manager = ComponentManager()
         self.spatial_index = SpatialIndex()
+        self._door_macro_alignment_offsets = dict(config.door_macro_alignment_offsets)
+        self.max_connected_placement_attempts = config.max_connected_placement_attempts
+        self.max_consecutive_limit_failures = config.max_consecutive_limit_failures
 
     def _is_in_bounds(self, room: PlacedRoom) -> bool:
         bounds = room.get_bounds()
@@ -197,13 +188,13 @@ class DungeonGenerator:
         return self._normalize_room_component(room_a_idx) == self._normalize_room_component(room_b_idx)
 
     def _random_macro_grid_point(self) -> Tuple[int, int]:
-        max_macro_x = (self.width // MACRO_GRID_SIZE) - 1
-        max_macro_y = (self.height // MACRO_GRID_SIZE) - 1
+        max_macro_x = (self.width // self.macro_grid_size) - 1
+        max_macro_y = (self.height // self.macro_grid_size) - 1
         if max_macro_x <= 1 or max_macro_y <= 1:
             raise ValueError("Grid too small to place rooms with macro-grid alignment")
 
-        macro_x = random.randint(1, max_macro_x - 1) * MACRO_GRID_SIZE
-        macro_y = random.randint(1, max_macro_y - 1) * MACRO_GRID_SIZE
+        macro_x = random.randint(1, max_macro_x - 1) * self.macro_grid_size
+        macro_y = random.randint(1, max_macro_y - 1) * self.macro_grid_size
         return macro_x, macro_y
 
     def _build_root_room_candidate(
@@ -216,7 +207,7 @@ class DungeonGenerator:
         rotated_anchor_port = rotated_ports[anchor_port_index]
 
         try:
-            offset_x, offset_y = DOOR_MACRO_ALIGNMENT_OFFSETS[rotated_anchor_port.direction]
+            offset_x, offset_y = self._door_macro_alignment_offsets[rotated_anchor_port.direction]
         except KeyError as exc:
             raise ValueError(f"Unsupported port direction {rotated_anchor_port.direction}") from exc
 
@@ -327,7 +318,7 @@ class DungeonGenerator:
             # Target position for the new room's connecting port so the rooms are adjacent
             target_port_pos = (ax + dx, ay + dy)
             # Candidate attempt loop
-            for _ in range(MAX_CONNECTED_PLACEMENT_ATTEMPTS):
+            for _ in range(self.max_connected_placement_attempts):
                 template = random.choices(
                     self.standalone_room_templates, weights=[rt.direct_weight for rt in self.standalone_room_templates]
                 )[0]
@@ -1838,8 +1829,10 @@ class DungeonGenerator:
         for root_room_index in range(self.num_rooms_to_place):
             if placed_count >= self.num_rooms_to_place:
                 break
-            if consecutive_limit_exceeded >= MAX_CONSECUTIVE_LIMIT_FAILURES:
-                print(f"Exceeded attempt limit {MAX_CONSECUTIVE_LIMIT_FAILURES} consecutive times, aborting further placement.")
+            if consecutive_limit_exceeded >= self.max_consecutive_limit_failures:
+                print(
+                    f"Exceeded attempt limit {self.max_consecutive_limit_failures} consecutive times, aborting further placement."
+                )
                 break
 
             placed_room: Optional[PlacedRoom] = None
@@ -1915,8 +1908,8 @@ class DungeonGenerator:
             for x in range(self.width):
                 if self.grid[y][x] != ' ':
                     continue
-                if (0 < (x % MACRO_GRID_SIZE) < MACRO_GRID_SIZE - 1) or (
-                    0 < (y % MACRO_GRID_SIZE) < MACRO_GRID_SIZE - 1
+                if (0 < (x % self.macro_grid_size) < self.macro_grid_size - 1) or (
+                    0 < (y % self.macro_grid_size) < self.macro_grid_size - 1
                 ):
                     continue
                 self.grid[y][x] = '.'

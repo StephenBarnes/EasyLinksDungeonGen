@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from dungeon_constants import RANDOM_SEED
+from dungeon_config import DungeonConfig
 from dungeon_generator import DungeonGenerator
 from dungeon_models import PortTemplate, RoomTemplate, RoomKind
 from dungeon_geometry import Direction
@@ -183,24 +183,26 @@ def build_default_room_templates() -> list[RoomTemplate]:
 
 
 def main() -> None:
-    if RANDOM_SEED is not None:
-        print(f"Using random seed {RANDOM_SEED}")
-        random.seed(RANDOM_SEED)
-    else:
-        # Pick a random seed randomly and print it, so we can reproduce bugs by setting RANDOM_SEED for the next run.
-        seed = random.randint(0, 1000000)
-        print(f"Using random seed {seed}")
-        random.seed(seed)
-
     room_templates = build_default_room_templates()
-    generator = DungeonGenerator(
+    config = DungeonConfig(
         width=120,
         height=50,
         room_templates=room_templates,
         direct_link_counts_probs={0: 0.55, 1: 0.25, 2: 0.15, 3: 0.05},
         num_rooms_to_place=22,
         min_room_separation=1,
+        random_seed=None,
     )
+
+    seed = config.random_seed
+    if seed is None:
+        # Pick a random seed randomly and print it, so we can reproduce bugs by setting the seed in DungeonConfig for the next run.
+        seed = random.randint(0, 1000000)
+        config.random_seed = seed
+    print(f"Using random seed {seed}")
+    random.seed(seed)
+
+    generator = DungeonGenerator(config)
 
     # Step 1: place rooms, some with direct links
     generator.place_rooms()

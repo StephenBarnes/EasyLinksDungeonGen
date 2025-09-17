@@ -1,21 +1,21 @@
-"""Shared constants for the dungeon generation prototype."""
+"""Utility helpers that were formerly global constants."""
 
 from __future__ import annotations
 
-from dungeon_geometry import Direction, Rotation
+from dungeon_geometry import Direction
 
-MACRO_GRID_SIZE = 4
-RANDOM_SEED = None  # Set to a number for reproducible behavior (for debugging); set to None to produce different dungeon on every run.
 
-# Door centers must land on these macro-grid offsets per-facing direction.
-DOOR_FRAC_OFFSET = MACRO_GRID_SIZE - 0.5
-DOOR_WHOLE_OFFSET = float(MACRO_GRID_SIZE - 1)
-DOOR_MACRO_ALIGNMENT_OFFSETS = {
-    Direction.NORTH: (DOOR_FRAC_OFFSET, 0.0),
-    Direction.SOUTH: (DOOR_FRAC_OFFSET, DOOR_WHOLE_OFFSET),
-    Direction.WEST: (0.0, DOOR_FRAC_OFFSET),
-    Direction.EAST: (DOOR_WHOLE_OFFSET, DOOR_FRAC_OFFSET),
-}
+def door_macro_alignment_offsets(macro_grid_size: int) -> dict[Direction, tuple[float, float]]:
+    """Return the door alignment offsets for a given macro-grid size."""
 
-MAX_CONNECTED_PLACEMENT_ATTEMPTS = 40
-MAX_CONSECUTIVE_LIMIT_FAILURES = 5 # We abort adding new rooms after we've reached max placement attempts too many times in a row.
+    door_frac_offset = macro_grid_size - 0.5
+    door_whole_offset = float(macro_grid_size - 1)
+    return {
+        Direction.NORTH: (door_frac_offset, 0.0),
+        Direction.SOUTH: (door_frac_offset, door_whole_offset),
+        Direction.WEST: (0.0, door_frac_offset),
+        Direction.EAST: (door_whole_offset, door_frac_offset),
+    }
+
+
+__all__ = ["door_macro_alignment_offsets"]

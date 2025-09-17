@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import FrozenSet, List, Optional, Tuple
 
-from dungeon_constants import DOOR_MACRO_ALIGNMENT_OFFSETS, MACRO_GRID_SIZE
+from dungeon_constants import door_macro_alignment_offsets
 from dungeon_geometry import (
     Direction,
     Rotation,
@@ -69,17 +69,22 @@ class RoomTemplate:
     direct_weight: float = 1.0  # Weight for random choice when creating direct-linked rooms.
     preferred_center_facing_dir: Optional[Direction] = None
     allow_door_overlaps: bool = False
+    macro_grid_size: int = 4
 
     def __post_init__(self) -> None:
-        self.kinds = frozenset(self.kinds)
-        self.validate()
         width, height = self.size
         self.size = (int(width), int(height))
+        self.macro_grid_size = int(self.macro_grid_size)
+        self.kinds = frozenset(self.kinds)
+        self.validate()
     
     def validate(self):
         """Run several validations to check that our room templates and their ports obey constraints."""
         if self.size[0] <= 0 or self.size[1] <= 0:
             raise ValueError(f"Room {self.name} must have positive non-zero dimensions")
+
+        if self.macro_grid_size <= 0:
+            raise ValueError(f"Room {self.name} must specify a positive macro-grid size")
 
         if not self.ports:
             raise ValueError(f"Room {self.name} must define at least one port")
@@ -187,6 +192,7 @@ class RoomTemplate:
     def validate_macrogrid_alignment(self):
         width, height = self.size
         eps = 1e-6
+        offsets = door_macro_alignment_offsets(self.macro_grid_size)
         for rotation in VALID_ROTATIONS:
             rotated_ports = []
             for port in self.ports:
@@ -198,7 +204,7 @@ class RoomTemplate:
             ref_offset_y = None
             for (rp_x, rp_y), direction in rotated_ports:
                 try:
-                    offset_x, offset_y = DOOR_MACRO_ALIGNMENT_OFFSETS[direction]
+                    offset_x, offset_y = offsets[direction]
                 except KeyError as exc:
                     raise ValueError(
                         f"Room {self.name} has unsupported port direction {direction}"
@@ -225,8 +231,8 @@ class RoomTemplate:
                 else:
                     delta_x = value_x - ref_offset_x
                     delta_y = value_y - ref_offset_y
-                    normalized_x = delta_x / float(MACRO_GRID_SIZE)
-                    normalized_y = delta_y / float(MACRO_GRID_SIZE)
+                    normalized_x = delta_x / float(self.macro_grid_size)
+                    normalized_y = delta_y / float(self.macro_grid_size)
                     if not math.isclose(normalized_x, round(normalized_x), abs_tol=eps):
                         raise ValueError(
                             f"Room {self.name} rotation {rotation.degrees} ports misaligned on macro-grid (x)"
