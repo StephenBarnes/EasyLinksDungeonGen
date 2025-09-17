@@ -6,7 +6,7 @@
 
 - Add support for weights when choosing room templates for T-junctions, 4-way junctions, and bend rooms. We generally want to prefer placing the bigger options if possible, and use the tiny 2x2 or 2x4 rooms only as a last resort.
 
-- Add a grower for bent room-to-corridor. Possibly factor out some logic in bent_room_to_room and put it in grower_context.
+- For rooms with only 1 connected port at the end, implement a contraction step where we try to move them inward and shorten the corridor.
 
 - Implement remaining growers, after refactoring growers.
 	- Add a grower that splits up overly long corridors, by placing a new room kind (marked as RoomKind.THROUGH) in the middle somewhere. Unclear where this should go in the ordering of steps.
