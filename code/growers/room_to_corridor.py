@@ -93,6 +93,11 @@ class RoomToCorridorGeometryPlanner(GeometryPlanner[RoomToCorridorCandidate, Roo
             if result is None:
                 continue
             geometry, target_corridor_idx, junction_tiles = result
+            if not context.layout.should_allow_connection(
+                ("room", candidate.room_idx),
+                ("corridor", target_corridor_idx),
+            ):
+                continue
             if (candidate.room_idx, target_corridor_idx) in existing_links:
                 continue
             viable_options.append((width, geometry, target_corridor_idx, junction_tiles))

@@ -86,6 +86,11 @@ class RoomToRoomCandidateFinder(CandidateFinder[RoomToRoomCandidate, RoomToRoomP
                     room_pair = tuple(sorted((room_a_idx, room_b_idx)))
                     if room_pair in self._connected_pairs:
                         continue
+                    if not context.layout.should_allow_connection(
+                        ("room", room_a_idx),
+                        ("room", room_b_idx),
+                    ):
+                        continue
                     common_widths = world_port_a.widths & world_port_b.widths
                     if not common_widths:
                         continue

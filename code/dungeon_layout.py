@@ -122,6 +122,33 @@ class DungeonLayout:
             self.room_corridor_links.add((corridor.room_b_index, corridor_idx))
         self._invalidate_graph_cache()
 
+    def should_allow_connection(
+        self,
+        entity_a: GraphEntity,
+        entity_b: GraphEntity,
+        *,
+        min_distance: Optional[int] = None,
+    ) -> bool:
+        threshold = self.config.min_intra_component_connection_distance
+        if min_distance is not None:
+            threshold = min_distance
+        if threshold <= 0:
+            return True
+
+        node_a = self._normalize_graph_entity(entity_a)
+        node_b = self._normalize_graph_entity(entity_b)
+        component_a = self._component_id_for_node(node_a)
+        component_b = self._component_id_for_node(node_b)
+        if component_a < 0 or component_b < 0:
+            return True
+        if component_a != component_b:
+            return True
+
+        distance = self.graph_distance(node_a, node_b)
+        if distance is None:
+            return True
+        return distance > threshold
+
     def graph_distance(self, entity_a: GraphEntity, entity_b: GraphEntity) -> Optional[int]:
         node_a = self._normalize_graph_entity(entity_a)
         node_b = self._normalize_graph_entity(entity_b)
@@ -207,6 +234,12 @@ class DungeonLayout:
         if kind == "corridor" and not (0 <= idx < len(self.corridors)):
             raise IndexError(f"Corridor index {idx} out of range")
         return (kind, idx)
+
+    def _component_id_for_node(self, node: GraphNode) -> int:
+        kind, idx = node
+        if kind == "room":
+            return self.normalize_room_component(idx)
+        return self.normalize_corridor_component(idx)
 
     def _invalidate_graph_cache(self) -> None:
         self._graph_distance_cache.clear()
