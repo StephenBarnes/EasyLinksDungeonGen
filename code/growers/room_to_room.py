@@ -274,6 +274,7 @@ class RoomToRoomGeometryPlanner(GeometryPlanner[RoomToRoomCandidate, RoomToRoomP
         placement = context.attempt_place_special_room(
             requirements,
             context.get_room_templates(RoomKind.FOUR_WAY),
+            RoomKind.FOUR_WAY,
             allowed_overlap_tiles=set(intersection_tiles),
             allowed_overlap_corridors={existing_idx},
         )

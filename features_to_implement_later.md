@@ -1,5 +1,7 @@
 - Add a RoomKind.DIRECT_LINKED.
 
+- Add options to run growers only for specific rooms or corridors, to improve performance. When one step adds rooms or corridors, we only want subsequent growers to consider new connections involving those, not re-consider all of the possible options.
+
 - Use different intra-component connection thresholds for different growers.
 
 - Place all root rooms in a smaller rectangle, say only in the central 80% of the map along each direction. Add a DungeonConfig field for this 80% value. Also adjust the _categorize_side_distance function in root_room_placer.py to adjust for the smaller size.

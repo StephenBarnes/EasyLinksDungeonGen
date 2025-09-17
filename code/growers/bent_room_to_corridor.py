@@ -97,10 +97,9 @@ class BentRoomToCorridorGeometryPlanner(
             return None
         random.shuffle(width_options)
 
-        bend_templates = list(context.get_room_templates(RoomKind.BEND))
+        bend_templates = context.weighted_templates(RoomKind.BEND)
         if not bend_templates:
             return None
-        random.shuffle(bend_templates)
 
         existing_links = set(context.layout.room_corridor_links)
 
@@ -415,6 +414,7 @@ class BentRoomToCorridorGeometryPlanner(
         placement = context.attempt_place_special_room(
             requirements,
             context.get_room_templates(RoomKind.T_JUNCTION),
+            RoomKind.T_JUNCTION,
             allowed_overlap_tiles=set(junction_tiles),
             allowed_overlap_corridors={target_corridor_idx},
         )

@@ -67,6 +67,9 @@ class RoomTemplate:
     root_weight_edge: float = 1.0  # Weight when placing room near the dungeon outskirts.
     root_weight_intermediate: float = 1.0  # Weight when placement is neither central nor edge.
     direct_weight: float = 1.0  # Weight for random choice when creating direct-linked rooms.
+    t_junction_weight: float = 1.0  # Weight when selecting as a T-junction special room.
+    bend_weight: float = 1.0  # Weight when selecting as a bend special room.
+    four_way_weight: float = 1.0  # Weight when selecting as a 4-way intersection.
     preferred_center_facing_dir: Optional[Direction] = None
     allow_door_overlaps: bool = False
     macro_grid_size: int = 4
@@ -76,8 +79,11 @@ class RoomTemplate:
         self.size = (int(width), int(height))
         self.macro_grid_size = int(self.macro_grid_size)
         self.kinds = frozenset(self.kinds)
+        self.t_junction_weight = float(self.t_junction_weight)
+        self.bend_weight = float(self.bend_weight)
+        self.four_way_weight = float(self.four_way_weight)
         self.validate()
-    
+
     def validate(self):
         """Run several validations to check that our room templates and their ports obey constraints."""
         if self.size[0] <= 0 or self.size[1] <= 0:
@@ -92,10 +98,27 @@ class RoomTemplate:
         if not self.kinds:
             raise ValueError(f"Room {self.name} must specify at least one RoomKind")
 
+        if self.t_junction_weight < 0:
+            raise ValueError(f"Room {self.name} T-junction weight must be non-negative")
+        if self.bend_weight < 0:
+            raise ValueError(f"Room {self.name} bend weight must be non-negative")
+        if self.four_way_weight < 0:
+            raise ValueError(f"Room {self.name} four-way weight must be non-negative")
+
         self.validate_ports()
         
         if RoomKind.STANDALONE in self.kinds:
             self.validate_macrogrid_alignment()
+
+    def weight_for_kind(self, kind: RoomKind) -> float:
+        """Return the selection weight for the given special-room kind."""
+        if kind is RoomKind.T_JUNCTION:
+            return self.t_junction_weight
+        if kind is RoomKind.BEND:
+            return self.bend_weight
+        if kind is RoomKind.FOUR_WAY:
+            return self.four_way_weight
+        return 1.0
 
     def validate_ports(self):
         """Validate per-port geometry and collect occupancy footprints at max width."""

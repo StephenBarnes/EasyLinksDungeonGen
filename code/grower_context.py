@@ -29,6 +29,32 @@ class GrowerContext:
         """Return templates registered for the requested room kind."""
         return self.room_templates_by_kind.get(kind, ())
 
+    def weighted_templates(
+        self,
+        kind: RoomKind,
+        templates: Optional[Sequence[RoomTemplate]] = None,
+    ) -> List[RoomTemplate]:
+        """Return templates ordered by randomized weights for the given kind."""
+        source = templates if templates is not None else self.get_room_templates(kind)
+        weighted: List[Tuple[float, RoomTemplate]] = []
+        zero_weight: List[RoomTemplate] = []
+        for template in source:
+            weight = template.weight_for_kind(kind)
+            if weight <= 0.0:
+                zero_weight.append(template)
+                continue
+            weighted.append((random.random() ** (1.0 / weight), template))
+
+        if weighted:
+            weighted.sort(key=lambda item: item[0], reverse=True)
+            ordered = [template for _, template in weighted]
+            ordered.extend(zero_weight)
+            return ordered
+
+        ordered = list(source)
+        random.shuffle(ordered)
+        return ordered
+
     # ------------------------------------------------------------------
     # Port and corridor utilities
     # ------------------------------------------------------------------
@@ -362,13 +388,13 @@ class GrowerContext:
         self,
         required_ports: List[PortRequirement],
         templates: Sequence[RoomTemplate],
+        kind: RoomKind,
         allowed_overlap_tiles: Set[TilePos],
         allowed_overlap_corridors: Set[int],
     ) -> Optional[Tuple[PlacedRoom, Dict[int, int], Dict[int, CorridorGeometry]]]:
         if not required_ports:
             return None
-        template_candidates = list(templates)
-        random.shuffle(template_candidates)
+        template_candidates = self.weighted_templates(kind, templates)
 
         for template in template_candidates:
             for rotation in VALID_ROTATIONS:

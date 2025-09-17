@@ -154,10 +154,9 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
 
         candidate_room_index = len(context.layout.placed_rooms)
 
-        bend_templates = list(context.get_room_templates(RoomKind.BEND))
+        bend_templates = context.weighted_templates(RoomKind.BEND)
         if not bend_templates:
             return None
-        random.shuffle(bend_templates)
 
         for width in width_options:
             for template in bend_templates:

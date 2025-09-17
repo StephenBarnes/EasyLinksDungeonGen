@@ -192,6 +192,7 @@ class RoomToCorridorGeometryPlanner(GeometryPlanner[RoomToCorridorCandidate, Roo
         placement = context.attempt_place_special_room(
             requirements,
             context.get_room_templates(RoomKind.T_JUNCTION),
+            RoomKind.T_JUNCTION,
             allowed_overlap_tiles=set(junction_tiles),
             allowed_overlap_corridors={target_corridor_idx},
         )
