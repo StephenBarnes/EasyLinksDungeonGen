@@ -9,6 +9,7 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
+from component_manager import ComponentManager
 from dungeon_constants import (
     DOOR_MACRO_ALIGNMENT_OFFSETS,
     MACRO_GRID_SIZE,
@@ -64,15 +65,13 @@ class DungeonGenerator:
         self.min_room_separation = min_room_separation
         self.min_rooms_required = min_rooms_required
         self.placed_rooms: List[PlacedRoom] = []
-        self.room_components: List[int] = []
         self.corridors: List[Corridor] = []
-        self.corridor_components: List[int] = []
         self.room_corridor_links: Set[Tuple[int, int]] = set()
         self.grid = [[" " for _ in range(width)] for _ in range(height)]
         # Probability distribution for number of immediate direct links per room
         # Example: {0: 0.4, 1: 0.3, 2: 0.3}
         self.direct_link_counts_probs = dict(direct_link_counts_probs)
-        self._next_component_id = 0
+        self.component_manager = ComponentManager()
         self.spatial_index = SpatialIndex()
 
     def _is_in_bounds(self, room: PlacedRoom) -> bool:
@@ -148,66 +147,54 @@ class DungeonGenerator:
                 row[x] = " "
 
     def _new_component_id(self) -> int:
-        component_id = self._next_component_id
-        self._next_component_id += 1
-        return component_id
+        return self.component_manager.new_component()
 
     def _register_room(self, room: PlacedRoom, component_id: int) -> None:
-        room.component_id = component_id
         self.placed_rooms.append(room)
-        self.room_components.append(component_id)
         room_index = len(self.placed_rooms) - 1
+        room.index = room_index
+        root = self.component_manager.register_room(component_id)
+        room.component_id = root
         self.spatial_index.add_room(room_index, room)
 
     def _register_corridor(self, corridor: Corridor, component_id: int) -> int:
-        corridor.component_id = component_id
         self.corridors.append(corridor)
-        self.corridor_components.append(component_id)
         new_index = len(self.corridors) - 1
+        corridor.index = new_index
+        root = self.component_manager.register_corridor(component_id)
+        corridor.component_id = root
         self.spatial_index.add_corridor(new_index, corridor.geometry.tiles)
         return new_index
 
     def _merge_components(self, *component_ids: int) -> int:
-        valid_ids = {cid for cid in component_ids if cid >= 0}
-        if not valid_ids:
-            raise ValueError("Cannot merge empty component set")
-
-        target = min(valid_ids)
-
-        for idx, comp in enumerate(self.room_components):
-            if comp in valid_ids:
-                self.room_components[idx] = target
-                self.placed_rooms[idx].component_id = target
-
-        for idx, comp in enumerate(self.corridor_components):
-            if comp in valid_ids:
-                self.corridor_components[idx] = target
-                self.corridors[idx].component_id = target
-
-        return target
+        return self.component_manager.union(*component_ids)
 
     def get_component_summary(self) -> Dict[int, Dict[str, List[int]]]:
         """Return indices of rooms and corridors grouped by component id."""
-        summary: Dict[int, Dict[str, List[int]]] = {}
+        return self.component_manager.component_summary()
 
-        def ensure_entry(component_id: int) -> Dict[str, List[int]]:
-            return summary.setdefault(
-                component_id,
-                {
-                    "rooms": [],
-                    "corridors": [],
-                },
-            )
+    def _set_room_component(self, room_idx: int, component_id: int) -> int:
+        root = self.component_manager.set_room_component(room_idx, component_id)
+        self.placed_rooms[room_idx].component_id = root
+        return root
 
-        for idx, component_id in enumerate(self.room_components):
-            comp_summary = ensure_entry(component_id)
-            comp_summary["rooms"].append(idx)
+    def _set_corridor_component(self, corridor_idx: int, component_id: int) -> int:
+        root = self.component_manager.set_corridor_component(corridor_idx, component_id)
+        self.corridors[corridor_idx].component_id = root
+        return root
 
-        for idx, component_id in enumerate(self.corridor_components):
-            comp_summary = ensure_entry(component_id)
-            comp_summary["corridors"].append(idx)
+    def _normalize_room_component(self, room_idx: int) -> int:
+        root = self.component_manager.room_component(room_idx)
+        self.placed_rooms[room_idx].component_id = root
+        return root
 
-        return summary
+    def _normalize_corridor_component(self, corridor_idx: int) -> int:
+        root = self.component_manager.corridor_component(corridor_idx)
+        self.corridors[corridor_idx].component_id = root
+        return root
+
+    def _rooms_share_component(self, room_a_idx: int, room_b_idx: int) -> bool:
+        return self._normalize_room_component(room_a_idx) == self._normalize_room_component(room_b_idx)
 
     def _random_rotation(self) -> Rotation:
         return random.choice(VALID_ROTATIONS)
@@ -327,6 +314,9 @@ class DungeonGenerator:
         port facing opposite the anchor port. Returns the new PlacedRoom on success,
         otherwise None.
         """
+        if anchor_room.index < 0:
+            raise ValueError("Anchor room must be registered before creating connections")
+        anchor_component_id = self._normalize_room_component(anchor_room.index)
         anchor_world_ports = anchor_room.get_world_ports()
         available_anchor_indices = anchor_room.get_available_port_indices()
         random.shuffle(available_anchor_indices)
@@ -363,7 +353,7 @@ class DungeonGenerator:
                 ny = int(round(target_port_pos[1] - rpy))
                 candidate = PlacedRoom(template, nx, ny, rotation)
                 if self._is_valid_placement_with_anchor(candidate, anchor_room):
-                    self._register_room(candidate, anchor_room.component_id)
+                    self._register_room(candidate, anchor_component_id)
                     anchor_room.connected_port_indices.add(anchor_idx)
                     candidate.connected_port_indices.add(cand_idx)
                     return candidate
@@ -939,8 +929,7 @@ class DungeonGenerator:
         corridor.port_b_index = primary_segment.port_b_index
         corridor.width = primary_segment.width
         corridor.geometry = primary_segment.geometry
-        corridor.component_id = component_id
-        self.corridor_components[corridor_idx] = component_id
+        self._set_corridor_component(corridor_idx, component_id)
         self.spatial_index.add_corridor(corridor_idx, corridor.geometry.tiles)
         connected_indices.append(corridor_idx)
 
@@ -1445,10 +1434,13 @@ class DungeonGenerator:
                                 requirements[req_idx], geometry=geometry_override
                             )
                     component_id = self._merge_components(
-                        self.placed_rooms[room_a_idx].component_id,
-                        self.placed_rooms[room_b_idx].component_id,
-                        existing_corridor.component_id,
+                        self._normalize_room_component(room_a_idx),
+                        self._normalize_room_component(room_b_idx),
+                        self._normalize_corridor_component(existing_idx),
                     )
+                    self._set_room_component(room_a_idx, component_id)
+                    self._set_room_component(room_b_idx, component_id)
+                    self._set_corridor_component(existing_idx, component_id)
 
                     junction_room_index = len(self.placed_rooms)
                     self._register_room(placed_room, component_id)
@@ -1501,9 +1493,11 @@ class DungeonGenerator:
 
                 else:
                     component_id = self._merge_components(
-                        self.placed_rooms[room_a_idx].component_id,
-                        self.placed_rooms[room_b_idx].component_id,
+                        self._normalize_room_component(room_a_idx),
+                        self._normalize_room_component(room_b_idx),
                     )
+                    self._set_room_component(room_a_idx, component_id)
+                    self._set_room_component(room_b_idx, component_id)
 
                     corridor = Corridor(
                         room_a_index=room_a_idx,
@@ -1658,9 +1652,11 @@ class DungeonGenerator:
                         requirements[req_idx], geometry=geometry_override
                     )
             component_id = self._merge_components(
-                self.placed_rooms[room_idx].component_id,
-                target_corridor.component_id,
+                self._normalize_room_component(room_idx),
+                self._normalize_corridor_component(target_corridor_idx),
             )
+            self._set_room_component(room_idx, component_id)
+            self._set_corridor_component(target_corridor_idx, component_id)
 
             junction_room_index = len(self.placed_rooms)
             self._register_room(placed_room, component_id)
@@ -1729,7 +1725,7 @@ class DungeonGenerator:
             print("Easylink step 4: skipped - no bend room templates available.")
             return 0
 
-        if len({*self.room_components, *self.corridor_components}) <= 1:
+        if self.component_manager.has_single_component():
             print("Easylink step 4: skipped - already fully connected.")
             return 0
 
@@ -1753,7 +1749,7 @@ class DungeonGenerator:
             for port_b_info in port_records[i + 1 :]:
                 room_a_idx = port_a_info["room_idx"]
                 room_b_idx = port_b_info["room_idx"]
-                if self.placed_rooms[room_a_idx].component_id == self.placed_rooms[room_b_idx].component_id:
+                if self._rooms_share_component(room_a_idx, room_b_idx):
                     continue
 
                 port_a = port_a_info["port"]
@@ -1793,7 +1789,7 @@ class DungeonGenerator:
                 continue
             if port_b_idx in room_b.connected_port_indices:
                 continue
-            if room_a.component_id == room_b.component_id:
+            if self._rooms_share_component(room_a_idx, room_b_idx):
                 continue
 
             plan = self._plan_bend_room(room_a_idx, port_a_idx, room_b_idx, port_b_idx)
@@ -1801,7 +1797,12 @@ class DungeonGenerator:
                 continue
 
             width, bend_room, corridor_plans = plan
-            component_id = self._merge_components(room_a.component_id, room_b.component_id)
+            component_id = self._merge_components(
+                self._normalize_room_component(room_a_idx),
+                self._normalize_room_component(room_b_idx),
+            )
+            self._set_room_component(room_a_idx, component_id)
+            self._set_room_component(room_b_idx, component_id)
 
             bend_room_index = len(self.placed_rooms)
             self._register_room(bend_room, component_id)
@@ -1822,7 +1823,7 @@ class DungeonGenerator:
 
             created += 1
 
-            if len({*self.room_components, *self.corridor_components}) <= 1:
+            if self.component_manager.has_single_component():
                 break
 
         if created == 0:

@@ -267,6 +267,7 @@ class Corridor:
     width: int
     geometry: CorridorGeometry
     component_id: int = -1
+    index: int = -1
 
 
 @dataclass
@@ -279,6 +280,7 @@ class PlacedRoom:
     rotation: Rotation
     component_id: int = -1
     connected_port_indices: set[int] = field(default_factory=set)
+    index: int = -1
 
     def __post_init__(self) -> None:
         if not isinstance(self.rotation, Rotation):
