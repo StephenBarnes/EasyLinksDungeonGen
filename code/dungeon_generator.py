@@ -27,8 +27,7 @@ class DungeonGenerator:
 
     def __init__(self, config: DungeonConfig) -> None:
         self.config = config
-        self.layout = DungeonLayout(config.width, config.height)
-        self.macro_grid_size = config.macro_grid_size
+        self.layout = DungeonLayout(config)
 
         self.room_templates = list(config.room_templates)
         self.standalone_room_templates = [rt for rt in self.room_templates if RoomKind.STANDALONE in rt.kinds]
@@ -36,53 +35,13 @@ class DungeonGenerator:
         self.t_junction_room_templates = [rt for rt in self.room_templates if RoomKind.T_JUNCTION in rt.kinds]
         self.four_way_room_templates = [rt for rt in self.room_templates if RoomKind.FOUR_WAY in rt.kinds]
 
-        self.num_rooms_to_place = config.num_rooms_to_place
-        # Minimum empty tiles between room bounding boxes, unless they connect at ports.
-        self.min_room_separation = config.min_room_separation
-        self.min_rooms_required = config.min_rooms_required
-        self.grid = [[" " for _ in range(self.width)] for _ in range(self.height)]
-        # Probability distribution for number of immediate direct links per room
-        # Example: {0: 0.4, 1: 0.3, 2: 0.3}
-        self.direct_link_counts_probs = dict(config.direct_link_counts_probs)
-        self._door_macro_alignment_offsets = dict(config.door_macro_alignment_offsets)
-        self.max_connected_placement_attempts = config.max_connected_placement_attempts
-        self.max_consecutive_limit_failures = config.max_consecutive_limit_failures
-
-    @property
-    def width(self) -> int:
-        return self.layout.width
-
-    @property
-    def height(self) -> int:
-        return self.layout.height
-
-    @property
-    def placed_rooms(self) -> List[PlacedRoom]:
-        return self.layout.placed_rooms
-
-    @property
-    def corridors(self) -> List[Corridor]:
-        return self.layout.corridors
-
-    @property
-    def room_corridor_links(self) -> Set[Tuple[int, int]]:
-        return self.layout.room_corridor_links
-
-    @property
-    def component_manager(self) -> ComponentManager:
-        return self.layout.component_manager
-
-    @property
-    def spatial_index(self) -> SpatialIndex:
-        return self.layout.spatial_index
-
     def generate(self) -> None:
         """Generates the dungeon, by invoking dungeon-growers."""
         # Note: This function is incomplete. Currently it runs our implemented growers in a fairly arbitrary order, mostly for testing. The final version will have more growers, and will include step 3 (counting components, deleting smaller components, and accepting or rejecting the final connected dungeon map).
 
         # Step 1: Place rooms, some with direct links
         self.place_rooms()
-        if not self.placed_rooms:
+        if not self.layout.placed_rooms:
             raise ValueError("ERROR: no placed rooms.")
 
         # Step 2: Run our growers repeatedly.
@@ -99,90 +58,18 @@ class DungeonGenerator:
         
         # Additional growers will be invoked here, then step 3.
 
-    def _is_in_bounds(self, room: PlacedRoom) -> bool:
-        bounds = room.get_bounds()
-        return (
-            0 <= bounds.x
-            and 0 <= bounds.y
-            and bounds.max_x <= self.width
-            and bounds.max_y <= self.height
-        )
-
-    def _is_valid_room_position(
-        self,
-        new_room: PlacedRoom,
-        anchor_room: Optional[PlacedRoom],
-        *,
-        ignore_corridors: Optional[Set[int]] = None,
-    ) -> bool:
-        if not self._is_in_bounds(new_room):
-            return False
-
-        bounds = new_room.get_bounds()
-        corridor_exclusions = set(ignore_corridors or ())
-        if not self.spatial_index.is_area_clear(bounds, ignore_corridors=corridor_exclusions):
-            return False
-
-        margin = self.min_room_separation
-        if margin <= 0:
-            return True
-
-        expanded_bounds = bounds.expand(margin)
-        ignore_rooms: Set[int] = set()
-        if anchor_room is not None:
-            try:
-                anchor_index = self.placed_rooms.index(anchor_room)
-            except ValueError:
-                anchor_index = None
-            if anchor_index is not None:
-                ignore_rooms.add(anchor_index)
-
-        return self.spatial_index.is_area_clear(
-            expanded_bounds,
-            ignore_rooms=ignore_rooms,
-            ignore_corridors=corridor_exclusions,
-        )
-
-    def _is_valid_placement(
-        self,
-        new_room: PlacedRoom,
-        *,
-        ignore_corridors: Optional[Set[int]] = None,
-    ) -> bool:
-        """Checks if a new room is in bounds and doesn't overlap existing rooms."""
-        return self._is_valid_room_position(new_room, None, ignore_corridors=ignore_corridors)
-
-    def _is_valid_placement_with_anchor(
-        self,
-        new_room: PlacedRoom,
-        anchor_room: PlacedRoom,
-        *,
-        ignore_corridors: Optional[Set[int]] = None,
-    ) -> bool:
-        """Validate placement allowing edge-adjacent contact with the anchor room only."""
-        return self._is_valid_room_position(
-            new_room,
-            anchor_room,
-            ignore_corridors=ignore_corridors,
-        )
-
-    def _clear_grid(self) -> None:
-        for row in self.grid:
-            for x in range(self.width):
-                row[x] = " "
-
     def get_component_summary(self) -> Dict[int, Dict[str, List[int]]]:
         """Return indices of rooms and corridors grouped by component id."""
         return self.layout.get_component_summary()
 
     def _random_macro_grid_point(self) -> Tuple[int, int]:
-        max_macro_x = (self.width // self.macro_grid_size) - 1
-        max_macro_y = (self.height // self.macro_grid_size) - 1
+        max_macro_x = (self.config.width // self.config.macro_grid_size) - 1
+        max_macro_y = (self.config.height // self.config.macro_grid_size) - 1
         if max_macro_x <= 1 or max_macro_y <= 1:
             raise ValueError("Grid too small to place rooms with macro-grid alignment")
 
-        macro_x = random.randint(1, max_macro_x - 1) * self.macro_grid_size
-        macro_y = random.randint(1, max_macro_y - 1) * self.macro_grid_size
+        macro_x = random.randint(1, max_macro_x - 1) * self.config.macro_grid_size
+        macro_y = random.randint(1, max_macro_y - 1) * self.config.macro_grid_size
         return macro_x, macro_y
 
     def _build_root_room_candidate(
@@ -195,7 +82,7 @@ class DungeonGenerator:
         rotated_anchor_port = rotated_ports[anchor_port_index]
 
         try:
-            offset_x, offset_y = self._door_macro_alignment_offsets[rotated_anchor_port.direction]
+            offset_x, offset_y = self.config._door_macro_alignment_offsets[rotated_anchor_port.direction]
         except KeyError as exc:
             raise ValueError(f"Unsupported port direction {rotated_anchor_port.direction}") from exc
 
@@ -219,10 +106,10 @@ class DungeonGenerator:
 
     def _describe_macro_position(self, macro_x: int, macro_y: int) -> Tuple[str, Dict[str, str]]:
         side_proximities = {
-            "left": self._categorize_side_distance(macro_x, self.width),
-            "right": self._categorize_side_distance(self.width - macro_x, self.width),
-            "top": self._categorize_side_distance(macro_y, self.height),
-            "bottom": self._categorize_side_distance(self.height - macro_y, self.height),
+            "left": self._categorize_side_distance(macro_x, self.config.width),
+            "right": self._categorize_side_distance(self.config.width - macro_x, self.config.width),
+            "top": self._categorize_side_distance(macro_y, self.config.height),
+            "bottom": self._categorize_side_distance(self.config.height - macro_y, self.config.height),
         }
 
         if any(value == "close" for value in side_proximities.values()):
@@ -269,7 +156,7 @@ class DungeonGenerator:
 
     def _sample_num_direct_links(self) -> int:
         """Sample n using the configured probability distribution."""
-        items = list(self.direct_link_counts_probs.items())
+        items = list(self.config.direct_link_counts_probs.items())
         total = sum(p for _, p in items)
         if total <= 0:
             # Fallback to default if misconfigured
@@ -306,7 +193,7 @@ class DungeonGenerator:
             # Target position for the new room's connecting port so the rooms are adjacent
             target_port_pos = (ax + dx, ay + dy)
             # Candidate attempt loop
-            for _ in range(self.max_connected_placement_attempts):
+            for _ in range(self.config.max_connected_placement_attempts):
                 template = random.choices(
                     self.standalone_room_templates, weights=[rt.direct_weight for rt in self.standalone_room_templates]
                 )[0]
@@ -328,7 +215,7 @@ class DungeonGenerator:
                 nx = int(round(target_port_pos[0] - rpx))
                 ny = int(round(target_port_pos[1] - rpy))
                 candidate = PlacedRoom(template, nx, ny, rotation)
-                if self._is_valid_placement_with_anchor(candidate, anchor_room):
+                if self.layout.is_valid_placement_with_anchor(candidate, anchor_room):
                     self.layout.register_room(candidate, anchor_component_id)
                     anchor_room.connected_port_indices.add(anchor_idx)
                     candidate.connected_port_indices.add(cand_idx)
@@ -394,7 +281,7 @@ class DungeonGenerator:
                     x, y = axis_value, cross
                 else:
                     x, y = cross, axis_value
-                if not (0 <= x < self.width and 0 <= y < self.height):
+                if not (0 <= x < self.config.width and 0 <= y < self.config.height):
                     return None
                 tiles.append(TilePos(x, y))
 
@@ -431,7 +318,7 @@ class DungeonGenerator:
         def room_owner(tile: TilePos) -> Optional[int]:
             if extra_room_tiles and tile in extra_room_tiles:
                 return extra_room_tiles[tile]
-            return self.spatial_index.get_room_at(tile)
+            return self.layout.spatial_index.get_room_at(tile)
 
         dx1, dy1 = port_a.direction.dx, port_a.direction.dy
         dx2, dy2 = port_b.direction.dx, port_b.direction.dy
@@ -464,7 +351,7 @@ class DungeonGenerator:
                     x, y = axis_value, cross_value
                 else:
                     x, y = cross_value, axis_value
-                if not (0 <= x < self.width and 0 <= y < self.height):
+                if not (0 <= x < self.config.width and 0 <= y < self.config.height):
                     return None
                 tile = TilePos(x, y)
                 if room_owner(tile) is not None:
@@ -581,7 +468,7 @@ class DungeonGenerator:
         for ty in range(bounds.y, bounds.max_y):
             for tx in range(bounds.x, bounds.max_x):
                 tile = TilePos(tx, ty)
-                owners = self.spatial_index.get_corridors_at(tile)
+                owners = self.layout.spatial_index.get_corridors_at(tile)
                 if not owners:
                     continue
                 if tile not in allowed_tiles and any(owner not in allowed_corridors for owner in owners):
@@ -729,7 +616,7 @@ class DungeonGenerator:
                         continue
 
                     candidate = PlacedRoom(template, translation[0], translation[1], rotation)
-                    if not self._is_valid_placement(
+                    if not self.layout.is_valid_placement(
                         candidate, ignore_corridors=allowed_overlap_corridors
                     ):
                         continue
@@ -772,13 +659,13 @@ class DungeonGenerator:
         return None
 
     def _validate_room_corridor_clearance(self, room_index: int) -> None:
-        room = self.placed_rooms[room_index]
+        room = self.layout.placed_rooms[room_index]
         bounds = room.get_bounds()
         overlaps: List[Tuple[TilePos, List[int]]] = []
         for ty in range(bounds.y, bounds.max_y):
             for tx in range(bounds.x, bounds.max_x):
                 tile = TilePos(tx, ty)
-                corridors = self.spatial_index.get_corridors_at(tile)
+                corridors = self.layout.spatial_index.get_corridors_at(tile)
                 if corridors:
                     overlaps.append((tile, list(corridors)))
         if overlaps:
@@ -793,7 +680,7 @@ class DungeonGenerator:
                     if corridor_idx in reported:
                         continue
                     reported.add(corridor_idx)
-                    corridor = self.corridors[corridor_idx]
+                    corridor = self.layout.corridors[corridor_idx]
                     geometry = corridor.geometry
                     print(
                         "    corridor"
@@ -866,7 +753,7 @@ class DungeonGenerator:
         junction_room_index: int,
         component_id: int,
     ) -> List[int]:
-        corridor = self.corridors[corridor_idx]
+        corridor = self.layout.corridors[corridor_idx]
         connected_indices: List[int] = []
 
         original_a = (corridor.room_a_index, corridor.port_a_index)
@@ -896,7 +783,7 @@ class DungeonGenerator:
             return connected_indices
 
         # Remove the old geometry before replacing it.
-        self.spatial_index.remove_corridor(corridor_idx)
+        self.layout.spatial_index.remove_corridor(corridor_idx)
 
         primary_end, primary_segment = segments[0]
         corridor.room_a_index = primary_segment.room_a_index
@@ -906,7 +793,7 @@ class DungeonGenerator:
         corridor.width = primary_segment.width
         corridor.geometry = primary_segment.geometry
         self.layout.set_corridor_component(corridor_idx, component_id)
-        self.spatial_index.add_corridor(corridor_idx, corridor.geometry.tiles)
+        self.layout.spatial_index.add_corridor(corridor_idx, corridor.geometry.tiles)
         connected_indices.append(corridor_idx)
 
         for _, segment in segments[1:]:
@@ -928,7 +815,7 @@ class DungeonGenerator:
             return None
 
         def room_owner(tile: TilePos) -> Optional[int]:
-            return self.spatial_index.get_room_at(tile)
+            return self.layout.spatial_index.get_room_at(tile)
 
         cross_center = port.pos[1] if axis_index == 0 else port.pos[0]
         cross_coords = self._corridor_cross_coords(cross_center, width)
@@ -936,7 +823,7 @@ class DungeonGenerator:
 
         axis_value = exit_axis_value
         path_tiles: List[TilePos] = []
-        max_steps = max(self.width, self.height) + 1
+        max_steps = max(self.config.width, self.config.height) + 1
         steps = 0
 
         while True:
@@ -947,15 +834,15 @@ class DungeonGenerator:
                 else:
                     x, y = cross, axis_value
 
-                if not (0 <= x < self.width and 0 <= y < self.height):
+                if not (0 <= x < self.config.width and 0 <= y < self.config.height):
                     return None
                 tiles_for_step.append(TilePos(x, y))
 
-            all_corridor = all(self.spatial_index.has_corridor_at(tile) for tile in tiles_for_step)
+            all_corridor = all(self.layout.spatial_index.has_corridor_at(tile) for tile in tiles_for_step)
             if all_corridor:
                 intersecting_indices: Optional[Set[int]] = None
                 for tile in tiles_for_step:
-                    indices = set(self.spatial_index.get_corridors_at(tile))
+                    indices = set(self.layout.spatial_index.get_corridors_at(tile))
                     if not indices:
                         intersecting_indices = set()
                         break
@@ -971,7 +858,7 @@ class DungeonGenerator:
 
                 chosen_idx: Optional[int] = None
                 for idx in sorted(intersecting_indices):
-                    candidate = self.corridors[idx]
+                    candidate = self.layout.corridors[idx]
                     if (
                         candidate.geometry.axis_index is not None
                         and candidate.geometry.axis_index == axis_index
@@ -983,7 +870,7 @@ class DungeonGenerator:
                 if chosen_idx is None:
                     return None
 
-                existing_geometry = self.corridors[chosen_idx].geometry
+                existing_geometry = self.layout.corridors[chosen_idx].geometry
                 existing_axis_index = existing_geometry.axis_index
                 if existing_axis_index is None:
                     return None
@@ -1010,7 +897,7 @@ class DungeonGenerator:
                 )
                 return geometry, chosen_idx, tuple(sorted(intersection_tiles))
 
-            if any(self.spatial_index.has_corridor_at(tile) for tile in tiles_for_step):
+            if any(self.layout.spatial_index.has_corridor_at(tile) for tile in tiles_for_step):
                 return None
 
             for tile in tiles_for_step:
@@ -1041,7 +928,7 @@ class DungeonGenerator:
     ) -> List[Tuple[int, int, WorldPort]]:
         """Gather all unused ports for the currently placed rooms."""
         available_ports: List[Tuple[int, int, WorldPort]] = []
-        for room_index, room in enumerate(self.placed_rooms):
+        for room_index, room in enumerate(self.layout.placed_rooms):
             world_ports = room_world_ports[room_index]
             for port_index in room.get_available_port_indices():
                 available_ports.append((room_index, port_index, world_ports[port_index]))
@@ -1058,8 +945,8 @@ class DungeonGenerator:
         if not self.bend_room_templates:
             return None
 
-        room_a = self.placed_rooms[room_a_idx]
-        room_b = self.placed_rooms[room_b_idx]
+        room_a = self.layout.placed_rooms[room_a_idx]
+        room_b = self.layout.placed_rooms[room_b_idx]
         ports_a = room_a.get_world_ports()
         ports_b = room_b.get_world_ports()
         port_a = ports_a[port_a_idx]
@@ -1091,7 +978,7 @@ class DungeonGenerator:
         horizontal_dir = horizontal_info["port"].direction
         vertical_dir = vertical_info["port"].direction
 
-        candidate_room_index = len(self.placed_rooms)
+        candidate_room_index = len(self.layout.placed_rooms)
 
         bend_templates = list(self.bend_room_templates)
         random.shuffle(bend_templates)
@@ -1133,7 +1020,7 @@ class DungeonGenerator:
                                 continue
 
                             placed_bend = PlacedRoom(template, int(round(candidate_x)), int(round(candidate_y)), rotation)
-                            if not self._is_valid_placement(placed_bend):
+                            if not self.layout.is_valid_placement(placed_bend):
                                 continue
 
                             bend_bounds = placed_bend.get_bounds()
@@ -1142,7 +1029,7 @@ class DungeonGenerator:
                             for ty in range(bend_bounds.y, bend_bounds.max_y):
                                 for tx in range(bend_bounds.x, bend_bounds.max_x):
                                     tile = TilePos(tx, ty)
-                                    if self.spatial_index.has_corridor_at(tile):
+                                    if self.layout.spatial_index.has_corridor_at(tile):
                                         overlaps_corridor = True
                                         break
                                     extra_room_tiles[tile] = candidate_room_index
@@ -1180,9 +1067,9 @@ class DungeonGenerator:
                             if geom_v is None:
                                 continue
 
-                            if any(self.spatial_index.has_corridor_at(tile) for tile in geom_h.tiles):
+                            if any(self.layout.spatial_index.has_corridor_at(tile) for tile in geom_h.tiles):
                                 continue
-                            if any(self.spatial_index.has_corridor_at(tile) for tile in geom_v.tiles):
+                            if any(self.layout.spatial_index.has_corridor_at(tile) for tile in geom_v.tiles):
                                 continue
 
                             tiles_h = set(geom_h.tiles)
@@ -1210,16 +1097,16 @@ class DungeonGenerator:
 
     def place_rooms(self) -> None:
         """Implements step 1: Randomly place rooms with macro-grid aligned ports."""
-        print(f"Attempting to place {self.num_rooms_to_place} rooms...")
+        print(f"Attempting to place {self.config.num_rooms_to_place} rooms...")
         placed_count = 0
         consecutive_limit_exceeded = 0
 
-        for root_room_index in range(self.num_rooms_to_place):
-            if placed_count >= self.num_rooms_to_place:
+        for root_room_index in range(self.config.num_rooms_to_place):
+            if placed_count >= self.config.num_rooms_to_place:
                 break
-            if consecutive_limit_exceeded >= self.max_consecutive_limit_failures:
+            if consecutive_limit_exceeded >= self.config.max_consecutive_limit_failures:
                 print(
-                    f"Exceeded attempt limit {self.max_consecutive_limit_failures} consecutive times, aborting further placement."
+                    f"Exceeded attempt limit {self.config.max_consecutive_limit_failures} consecutive times, aborting further placement."
                 )
                 break
 
@@ -1242,7 +1129,7 @@ class DungeonGenerator:
                 template = random.choices(self.standalone_room_templates, weights=template_weights)[0]
                 rotation = self._select_root_rotation(template, placement_category, side_proximities)
                 candidate_room = self._build_root_room_candidate(template, rotation, macro_x, macro_y)
-                if self._is_valid_placement(candidate_room):
+                if self.layout.is_valid_placement(candidate_room):
                     placed_room = candidate_room
                     break
 
@@ -1261,56 +1148,3 @@ class DungeonGenerator:
             #print(f"Placed root room is {placed_room.template.name} at {(placed_room.x, placed_room.y)}")
 
         print(f"Successfully placed {placed_count} rooms.")
-
-    def draw_to_grid(self, draw_macrogrid: bool = False) -> None:
-        """Renders the placed rooms and overlays all door ports."""
-        self._clear_grid()
-        # Fill rooms with a character so they are easy to distinguish.
-        for room in self.placed_rooms:
-            room_char = random.choice('OX/LNMW123456789')
-            bounds = room.get_bounds()
-            for ty in range(bounds.y, bounds.max_y):
-                for tx in range(bounds.x, bounds.max_x):
-                    self.grid[ty][tx] = room_char
-        # Draw ports
-        for room in self.placed_rooms:
-            for port in room.get_world_ports():
-                for tx, ty in port.tiles:
-                    self.grid[ty][tx] = '█'
-        # Draw corridors as floor tiles
-        for corridor in self.corridors:
-            for tx, ty in corridor.geometry.tiles:
-                if self.grid[ty][tx] == '░':
-                    print(f"Warning: tile {tx, ty} appears to be in multiple corridors")
-                elif self.grid[ty][tx] == '█':
-                    print(f"Warning: tile {tx, ty} is overlapping a room (on one of the port markers)")
-                elif self.grid[ty][tx] != ' ':
-                    print(f"Warning: tile {tx, ty} is in a room but also in a corridor")
-                self.grid[ty][tx] = '░'
-        if draw_macrogrid:
-            self._draw_macrogrid_overlay()
-
-    def _draw_macrogrid_overlay(self) -> None:
-        """Add 2x2 boxes showing macro-grid squares where door ports can appear."""
-        for y in range(self.height):
-            for x in range(self.width):
-                if self.grid[y][x] != ' ':
-                    continue
-                if (0 < (x % self.macro_grid_size) < self.macro_grid_size - 1) or (
-                    0 < (y % self.macro_grid_size) < self.macro_grid_size - 1
-                ):
-                    continue
-                self.grid[y][x] = '.'
-
-    def mark_room_interior_on_grid(self, room_idx: int) -> None:
-        """Mark the interior of the specified room_idx with asterisks."""
-        room = self.placed_rooms[room_idx]
-        bounds = room.get_bounds()
-        for x in range(bounds.x + 1, bounds.max_x - 1):
-            for y in range(bounds.y + 1, bounds.max_y - 1):
-                self.grid[y][x] = "*"
-
-    def print_grid(self, horizontal_sep: str = "") -> None:
-        """Prints the ASCII grid to the console."""
-        for row in self.grid:
-            print(horizontal_sep.join(row))

@@ -44,7 +44,7 @@ class RoomToCorridorCandidateFinder(CandidateFinder[RoomToCorridorCandidate, Roo
 
     def find_candidates(self, generator: DungeonGenerator) -> Iterable[RoomToCorridorCandidate]:
         self._used_ports.clear()
-        room_world_ports = [room.get_world_ports() for room in generator.placed_rooms]
+        room_world_ports = [room.get_world_ports() for room in generator.layout.placed_rooms]
         available_ports = generator._list_available_ports(room_world_ports)
         random.shuffle(available_ports)
 
@@ -83,7 +83,7 @@ class RoomToCorridorGeometryPlanner(GeometryPlanner[RoomToCorridorCandidate, Roo
         random.shuffle(width_options)
 
         viable_options: List[Tuple[int, CorridorGeometry, int, Tuple[TilePos, ...]]] = []
-        existing_links = set(generator.room_corridor_links)
+        existing_links = set(generator.layout.room_corridor_links)
         for width in width_options:
             result = generator._build_t_junction_geometry(
                 candidate.room_idx,
@@ -121,7 +121,7 @@ class RoomToCorridorGeometryPlanner(GeometryPlanner[RoomToCorridorCandidate, Roo
         target_corridor_idx: int,
         junction_tiles: Tuple[TilePos, ...],
     ) -> Optional[RoomToCorridorPlan]:
-        target_corridor = generator.corridors[target_corridor_idx]
+        target_corridor = generator.layout.corridors[target_corridor_idx]
         if geometry.axis_index is None:
             return None
         existing_axis_index = target_corridor.geometry.axis_index
@@ -195,11 +195,11 @@ class RoomToCorridorGeometryPlanner(GeometryPlanner[RoomToCorridorCandidate, Roo
                 "Failed to place T-junction room. Will print out grid and indicate the intended position of room."
             )
             print(requirements)
-            generator.draw_to_grid()
+            generator.layout.draw_to_grid()
             for x, y in junction_tiles:
-                generator.grid[y][x] = "*"
-            generator.mark_room_interior_on_grid(candidate.room_idx)
-            generator.print_grid()
+                generator.layout.grid[y][x] = "*"
+            generator.layout.mark_room_interior_on_grid(candidate.room_idx)
+            generator.layout.print_grid()
             raise RuntimeError("Unable to place a T-junction room with available templates.")
 
         placed_room, port_mapping, geometry_overrides = placement
@@ -241,7 +241,7 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
         generator.layout.set_room_component(candidate.room_idx, component_id)
         generator.layout.set_corridor_component(plan.target_corridor_idx, component_id)
 
-        junction_room_index = len(generator.placed_rooms)
+        junction_room_index = len(generator.layout.placed_rooms)
         generator.layout.register_room(plan.junction_room, component_id)
 
         branch_requirement = plan.requirements[plan.branch_requirement_idx]
@@ -259,10 +259,10 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
             component_id=component_id,
         )
         new_corridor_idx = generator.layout.register_corridor(new_corridor, component_id)
-        generator.placed_rooms[candidate.room_idx].connected_port_indices.add(candidate.port_idx)
-        generator.placed_rooms[junction_room_index].connected_port_indices.add(branch_port_idx)
-        generator.room_corridor_links.add((candidate.room_idx, new_corridor_idx))
-        generator.room_corridor_links.add((candidate.room_idx, plan.target_corridor_idx))
+        generator.layout.placed_rooms[candidate.room_idx].connected_port_indices.add(candidate.port_idx)
+        generator.layout.placed_rooms[junction_room_index].connected_port_indices.add(branch_port_idx)
+        generator.layout.room_corridor_links.add((candidate.room_idx, new_corridor_idx))
+        generator.layout.room_corridor_links.add((candidate.room_idx, plan.target_corridor_idx))
 
         existing_assignments: Dict[str, Tuple[PortRequirement, int]] = {}
         for suffix in ("a", "b"):
@@ -273,7 +273,7 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
             requirement = plan.requirements[req_idx]
             junction_port_idx = plan.port_mapping[req_idx]
             existing_assignments[suffix] = (requirement, junction_port_idx)
-            generator.placed_rooms[junction_room_index].connected_port_indices.add(junction_port_idx)
+            generator.layout.placed_rooms[junction_room_index].connected_port_indices.add(junction_port_idx)
 
         linked_indices = generator._apply_existing_corridor_segments(
             plan.target_corridor_idx,
@@ -283,7 +283,7 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
         )
 
         for idx in linked_indices:
-            generator.room_corridor_links.add((candidate.room_idx, idx))
+            generator.layout.room_corridor_links.add((candidate.room_idx, idx))
 
         generator._validate_room_corridor_clearance(junction_room_index)
 
@@ -303,7 +303,7 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
 def run_room_to_corridor_grower(
     generator: DungeonGenerator, fill_probability: float
 ) -> int:
-    if not generator.corridors:
+    if not generator.layout.corridors:
         print("Room-to-corridor grower: skipped - no existing corridors to join.")
         return 0
     grower = DungeonGrower(

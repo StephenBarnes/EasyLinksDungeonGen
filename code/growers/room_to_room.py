@@ -60,10 +60,10 @@ class RoomToRoomCandidateFinder(CandidateFinder[RoomToRoomCandidate, RoomToRoomP
         self._used_ports.clear()
         self._connected_pairs = {
             tuple(sorted((corridor.room_a_index, corridor.room_b_index))) # type: ignore
-            for corridor in generator.corridors
+            for corridor in generator.layout.corridors
             if corridor.room_b_index is not None
         }
-        room_world_ports = [room.get_world_ports() for room in generator.placed_rooms]
+        room_world_ports = [room.get_world_ports() for room in generator.layout.placed_rooms]
         available_ports = generator._list_available_ports(room_world_ports)
         random.shuffle(available_ports)
 
@@ -146,7 +146,7 @@ class RoomToRoomGeometryPlanner(GeometryPlanner[RoomToRoomCandidate, RoomToRoomP
     ) -> Optional[RoomToRoomPlan]:
         overlap_map: Dict[int, List[TilePos]] = {}
         for tile in geometry.tiles:
-            for existing_idx in generator.spatial_index.get_corridors_at(tile):
+            for existing_idx in generator.layout.spatial_index.get_corridors_at(tile):
                 overlap_map.setdefault(existing_idx, []).append(tile)
 
         if not overlap_map:
@@ -156,7 +156,7 @@ class RoomToRoomGeometryPlanner(GeometryPlanner[RoomToRoomCandidate, RoomToRoomP
             return None
 
         existing_idx, overlap_tiles = next(iter(overlap_map.items()))
-        existing_corridor = generator.corridors[existing_idx]
+        existing_corridor = generator.layout.corridors[existing_idx]
         if existing_corridor.geometry.axis_index is None or geometry.axis_index is None:
             return None
         if existing_corridor.geometry.axis_index == geometry.axis_index:
@@ -301,7 +301,7 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
         candidate: RoomToRoomCandidate,
         plan: RoomToRoomPlan,
     ) -> GrowerStepResult:
-        before = len(generator.corridors)
+        before = len(generator.layout.corridors)
 
         if isinstance(plan, DirectRoomConnectionPlan):
             component_id = generator.layout.merge_components(
@@ -321,8 +321,8 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
                 component_id=component_id,
             )
             generator.layout.register_corridor(corridor, component_id)
-            generator.placed_rooms[candidate.room_a_idx].connected_port_indices.add(candidate.port_a_idx)
-            generator.placed_rooms[candidate.room_b_idx].connected_port_indices.add(candidate.port_b_idx)
+            generator.layout.placed_rooms[candidate.room_a_idx].connected_port_indices.add(candidate.port_a_idx)
+            generator.layout.placed_rooms[candidate.room_b_idx].connected_port_indices.add(candidate.port_b_idx)
         else:
             component_id = generator.layout.merge_components(
                 generator.layout.normalize_room_component(candidate.room_a_idx),
@@ -333,7 +333,7 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
             generator.layout.set_room_component(candidate.room_b_idx, component_id)
             generator.layout.set_corridor_component(plan.existing_corridor_idx, component_id)
 
-            junction_room_index = len(generator.placed_rooms)
+            junction_room_index = len(generator.layout.placed_rooms)
             generator.layout.register_room(plan.junction_room, component_id)
 
             for key, source_room_idx, source_port_idx in (
@@ -358,8 +358,8 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
                     component_id=component_id,
                 )
                 generator.layout.register_corridor(corridor, component_id)
-                generator.placed_rooms[source_room_idx].connected_port_indices.add(source_port_idx)
-                generator.placed_rooms[junction_room_index].connected_port_indices.add(junction_port_idx)
+                generator.layout.placed_rooms[source_room_idx].connected_port_indices.add(source_port_idx)
+                generator.layout.placed_rooms[junction_room_index].connected_port_indices.add(junction_port_idx)
 
             existing_assignments: Dict[str, Tuple[PortRequirement, int]] = {}
             for suffix in ("a", "b"):
@@ -370,7 +370,7 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
                 requirement = plan.requirements[req_idx]
                 junction_port_idx = plan.port_mapping[req_idx]
                 existing_assignments[suffix] = (requirement, junction_port_idx)
-                generator.placed_rooms[junction_room_index].connected_port_indices.add(junction_port_idx)
+                generator.layout.placed_rooms[junction_room_index].connected_port_indices.add(junction_port_idx)
 
             generator._apply_existing_corridor_segments(
                 plan.existing_corridor_idx,
@@ -379,11 +379,11 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
                 component_id,
             )
 
-            generator.placed_rooms[candidate.room_a_idx].connected_port_indices.add(candidate.port_a_idx)
-            generator.placed_rooms[candidate.room_b_idx].connected_port_indices.add(candidate.port_b_idx)
+            generator.layout.placed_rooms[candidate.room_a_idx].connected_port_indices.add(candidate.port_a_idx)
+            generator.layout.placed_rooms[candidate.room_b_idx].connected_port_indices.add(candidate.port_b_idx)
             self._junction_rooms_created += 1
 
-        delta = len(generator.corridors) - before
+        delta = len(generator.layout.corridors) - before
         if delta > 0:
             self._corridor_delta += delta
         return GrowerStepResult(applied=True)

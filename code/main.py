@@ -209,8 +209,8 @@ def main() -> None:
     # Debug: check number of components is correct
     print(f"Component count: {len(generator.get_component_summary())}")
 
-    generator.draw_to_grid(draw_macrogrid=True)
-    generator.print_grid(horizontal_sep="")
+    generator.layout.draw_to_grid(draw_macrogrid=True)
+    generator.layout.print_grid(horizontal_sep="")
 
 if __name__ == "__main__":
     main()

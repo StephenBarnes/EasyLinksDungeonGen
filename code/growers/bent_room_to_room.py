@@ -42,7 +42,7 @@ class BentRoomCandidateFinder(CandidateFinder[BentRoomCandidate, BentRoomPlan]):
 
     def find_candidates(self, generator: DungeonGenerator) -> Iterable[BentRoomCandidate]:
         self._used_ports.clear()
-        room_world_ports = [room.get_world_ports() for room in generator.placed_rooms]
+        room_world_ports = [room.get_world_ports() for room in generator.layout.placed_rooms]
         available_ports = generator._list_available_ports(room_world_ports)
 
         records = [
@@ -147,7 +147,7 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
         generator.layout.set_room_component(candidate.room_a_idx, component_id)
         generator.layout.set_room_component(candidate.room_b_idx, component_id)
 
-        bend_room_index = len(generator.placed_rooms)
+        bend_room_index = len(generator.layout.placed_rooms)
         generator.layout.register_room(plan.bend_room, component_id)
 
         for existing_room_idx, existing_port_idx, bend_port_idx, geometry in plan.corridor_plans:
@@ -161,11 +161,11 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
                 component_id=component_id,
             )
             generator.layout.register_corridor(corridor, component_id)
-            generator.placed_rooms[existing_room_idx].connected_port_indices.add(existing_port_idx)
-            generator.placed_rooms[bend_room_index].connected_port_indices.add(bend_port_idx)
+            generator.layout.placed_rooms[existing_room_idx].connected_port_indices.add(existing_port_idx)
+            generator.layout.placed_rooms[bend_room_index].connected_port_indices.add(bend_port_idx)
 
         self._created += 1
-        stop = generator.component_manager.has_single_component()
+        stop = generator.layout.component_manager.has_single_component()
         return GrowerStepResult(applied=True, stop=stop)
 
     def finalize(self, generator: DungeonGenerator) -> int:
@@ -177,13 +177,13 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
 
 
 def run_bent_room_to_room_grower(generator: DungeonGenerator) -> int:
-    if len(generator.placed_rooms) < 2:
+    if len(generator.layout.placed_rooms) < 2:
         print("Bent-room-to-room grower: skipped - not enough rooms to connect.")
         return 0
     if not generator.bend_room_templates:
         print("Bent-room-to-room grower: skipped - no bend room templates available.")
         return 0
-    if generator.component_manager.has_single_component():
+    if generator.layout.component_manager.has_single_component():
         print("Bent-room-to-room grower: skipped - already fully connected.")
         return 0
 

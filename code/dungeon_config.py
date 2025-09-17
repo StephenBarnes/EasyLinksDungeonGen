@@ -17,8 +17,11 @@ class DungeonConfig:
     width: int
     height: int
     room_templates: Sequence[RoomTemplate]
+    # Probability distribution for number of immediate direct links per room
+    # Example: {0: 0.4, 1: 0.3, 2: 0.3}
     direct_link_counts_probs: Mapping[int, float]
     num_rooms_to_place: int
+    # Minimum empty tiles between room bounding boxes, unless they connect at ports.
     min_room_separation: int
     min_rooms_required: int = 6
     macro_grid_size: int = 4
