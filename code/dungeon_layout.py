@@ -78,7 +78,7 @@ class DungeonLayout:
     def _clear_grid(self) -> None:
         for row in self.grid:
             for x in range(self.config.width):
-                row[x] = " "
+                row[x] = '.'
 
     def draw_to_grid(self, draw_macrogrid: bool = False) -> None:
         """Renders the placed rooms and overlays all door ports."""
@@ -102,7 +102,7 @@ class DungeonLayout:
                     print(f"Warning: tile {tx, ty} appears to be in multiple corridors")
                 elif self.grid[ty][tx] == '█':
                     print(f"Warning: tile {tx, ty} is overlapping a room (on one of the port markers)")
-                elif self.grid[ty][tx] != ' ':
+                elif self.grid[ty][tx] != '.':
                     print(f"Warning: tile {tx, ty} is in a room but also in a corridor")
                 self.grid[ty][tx] = '░'
         if draw_macrogrid:
@@ -112,13 +112,13 @@ class DungeonLayout:
         """Add 2x2 boxes showing macro-grid squares where door ports can appear."""
         for y in range(self.config.height):
             for x in range(self.config.width):
-                if self.grid[y][x] != ' ':
+                if self.grid[y][x] != '.':
                     continue
                 if (0 < (x % self.config.macro_grid_size) < self.config.macro_grid_size - 1) or (
                     0 < (y % self.config.macro_grid_size) < self.config.macro_grid_size - 1
                 ):
                     continue
-                self.grid[y][x] = '.'
+                self.grid[y][x] = ';'
 
     def mark_room_interior_on_grid(self, room_idx: int) -> None:
         """Mark the interior of the specified room_idx with asterisks."""
