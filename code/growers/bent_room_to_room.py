@@ -281,8 +281,9 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
 
 
 class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
-    def __init__(self) -> None:
+    def __init__(self, stop_after_first: bool) -> None:
         self._created = 0
+        self._stop_after_first = stop_after_first
 
     def apply(
         self,
@@ -315,7 +316,7 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
             context.layout.placed_rooms[bend_room_index].connected_port_indices.add(bend_port_idx)
 
         self._created += 1
-        stop = context.layout.component_manager.has_single_component()
+        stop = self._stop_after_first or context.layout.component_manager.has_single_component()
         return GrowerStepResult(applied=True, stop=stop)
 
     def finalize(self, context: GrowerContext) -> int:
@@ -326,7 +327,7 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
         return self._created
 
 
-def run_bent_room_to_room_grower(context: GrowerContext) -> int:
+def run_bent_room_to_room_grower(context: GrowerContext, stop_after_first: bool) -> int:
     if len(context.layout.placed_rooms) < 2:
         print("Bent-room-to-room grower: skipped - not enough rooms to connect.")
         return 0
@@ -341,6 +342,6 @@ def run_bent_room_to_room_grower(context: GrowerContext) -> int:
         name="bent_room_to_room",
         candidate_finder=BentRoomCandidateFinder(),
         geometry_planner=BentRoomGeometryPlanner(),
-        applier=BentRoomApplier(),
+        applier=BentRoomApplier(stop_after_first=stop_after_first),
     )
     return grower.run(context)

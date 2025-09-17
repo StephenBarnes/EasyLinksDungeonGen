@@ -8,10 +8,10 @@ from dungeon_config import DungeonConfig
 from grower_context import GrowerContext
 from models import RoomKind, RoomTemplate
 from growers import (
-    run_bent_room_to_corridor_grower,
     run_bent_room_to_room_grower,
     run_room_to_corridor_grower,
     run_room_to_room_grower,
+    run_bent_room_to_corridor_grower,
     run_through_corridor_grower,
 )
 from dungeon_layout import DungeonLayout
@@ -61,14 +61,20 @@ class DungeonGenerator:
         while num_created > 0:
             num_created = run_room_to_corridor_grower(context, fill_probability=1)
             num_created += run_room_to_room_grower(context)
-        num_created = run_bent_room_to_room_grower(context)
+
+        num_created = run_bent_room_to_room_grower(context, stop_after_first=True)
         while num_created > 0:
             num_created = run_room_to_room_grower(context)
             num_created += run_room_to_corridor_grower(context, fill_probability=1)
-        num_created = run_bent_room_to_corridor_grower(context, fill_probability=1)
+            if num_created == 0:
+                num_created = run_bent_room_to_room_grower(context, stop_after_first=True)
+
+        num_created = run_bent_room_to_corridor_grower(context, stop_after_first=True, fill_probability=1)
         while num_created > 0:
             num_created = run_room_to_room_grower(context)
             num_created += run_room_to_corridor_grower(context, fill_probability=1)
+            if num_created == 0:
+                num_created = run_bent_room_to_corridor_grower(context, stop_after_first=True, fill_probability=1)
 
         num_created = run_through_corridor_grower(context)
         while num_created > 0:

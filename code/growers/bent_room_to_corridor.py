@@ -488,10 +488,11 @@ class BentRoomToCorridorGeometryPlanner(
 class BentRoomToCorridorApplier(
     GrowerApplier[BentRoomToCorridorCandidate, BentRoomToCorridorPlan]
 ):
-    def __init__(self) -> None:
+    def __init__(self, *, stop_after_first: bool) -> None:
         self._created = 0
         self._bend_rooms = 0
         self._junction_rooms = 0
+        self._stop_after_first = stop_after_first
 
     def apply(
         self,
@@ -584,7 +585,7 @@ class BentRoomToCorridorApplier(
         self._created += 1
         self._bend_rooms += 1
         self._junction_rooms += 1
-        stop = context.layout.component_manager.has_single_component()
+        stop = self._stop_after_first or context.layout.component_manager.has_single_component()
         return GrowerStepResult(applied=True, stop=stop)
 
     def finalize(self, context: GrowerContext) -> int:
@@ -600,9 +601,12 @@ class BentRoomToCorridorApplier(
         return self._created
 
 
-def run_bent_room_to_corridor_grower(
+def _run_bent_room_to_corridor_grower(
     context: GrowerContext,
-    fill_probability: float = 1.0,
+    fill_probability: float,
+    *,
+    stop_after_first: bool,
+    name: str,
 ) -> int:
     if not context.layout.corridors:
         print("Bent-room-to-corridor grower: skipped - no corridors available to join.")
@@ -614,9 +618,22 @@ def run_bent_room_to_corridor_grower(
         print("Bent-room-to-corridor grower: skipped - no T-junction templates available.")
         return 0
     grower = DungeonGrower(
-        name="bent_room_to_corridor",
+        name=name,
         candidate_finder=BentRoomToCorridorCandidateFinder(),
         geometry_planner=BentRoomToCorridorGeometryPlanner(fill_probability=fill_probability),
-        applier=BentRoomToCorridorApplier(),
+        applier=BentRoomToCorridorApplier(stop_after_first=stop_after_first),
     )
     return grower.run(context)
+
+
+def run_bent_room_to_corridor_grower(
+    context: GrowerContext,
+    stop_after_first: bool,
+    fill_probability: float = 1.0,
+) -> int:
+    return _run_bent_room_to_corridor_grower(
+        context,
+        fill_probability,
+        stop_after_first=stop_after_first,
+        name="bent_room_to_corridor",
+    )
