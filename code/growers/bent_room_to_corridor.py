@@ -411,7 +411,7 @@ class BentRoomToCorridorGeometryPlanner(
         ):
             return None
 
-        placement = context.attempt_place_special_room(
+        placement = context.attempt_place_special_room( # <--- I think the bug is happening due to this call rejecting valid room candidates.
             requirements,
             context.get_room_templates(RoomKind.T_JUNCTION),
             RoomKind.T_JUNCTION,
@@ -420,6 +420,7 @@ class BentRoomToCorridorGeometryPlanner(
         )
         if placement is None:
             return None
+        print(f"Placed special room {placement[0].template.name}") # Debugging
 
         placed_room, port_mapping, geometry_overrides = placement
         if geometry_overrides:
