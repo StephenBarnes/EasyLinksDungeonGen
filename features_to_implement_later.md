@@ -10,6 +10,15 @@
 
 - For rooms with only 1 connected port at the end, implement a contraction step where we try to move them inward and shorten the corridor.
 
+- Ban creation of very long corridors. (Test how this affects total connectivity.)
+
+- Implement tests.
+
+- Implement integration testing to measure metrics over many random runs. This would allow testing the impact of tweaks and optimizations.
+	- Measure performance of the entire gen algorithm.
+	- Measure the distribution of the largest component's size at the end - we want it to be over say 80% of the whole dungeon.
+	- Measure some metrics about dungeon structure, such as the number of cycles and distribution of their sizes.
+
 - Implement remaining growers, after refactoring growers.
 	- Add a grower that splits up overly long corridors, by placing a new room kind (marked as RoomKind.THROUGH) in the middle somewhere. Unclear where this should go in the ordering of steps.
 	- Add a grower that tries to randomly rotate rooms that currently have none of their door ports connected; check if the rotated version's dimensions still fit. Then try to apply other growers again and see if they create new edges.

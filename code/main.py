@@ -206,12 +206,12 @@ def build_default_room_templates() -> list[RoomTemplate]:
 def main() -> None:
     room_templates = build_default_room_templates()
     config = DungeonConfig(
-        width=120,
-        height=50,
+        width=200,
+        height=200,
         room_templates=room_templates,
         direct_link_counts_probs={0: 0.55, 1: 0.25, 2: 0.15, 3: 0.05},
         # direct_link_counts_probs={0: 1}, # For debugging
-        num_rooms_to_place=30,
+        num_rooms_to_place=50,
         min_room_separation=1,
         min_intra_component_connection_distance=10,
         max_desired_corridor_length=8,
@@ -235,7 +235,9 @@ def main() -> None:
     generator.generate()
 
     # Debug: check number of components is correct
-    print(f"Component count: {len(generator.layout.get_component_summary())}")
+    component_sizes = generator.layout.get_component_sizes()
+    largest_component_fraction = max(component_sizes.values()) / float(sum(component_sizes.values()))
+    print(f"Largest component: {int(largest_component_fraction * 100)}% of dungeon")
 
     generator.layout.draw_to_grid(draw_macrogrid=True)
     generator.layout.print_grid(horizontal_sep="")

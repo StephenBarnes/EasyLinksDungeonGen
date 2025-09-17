@@ -130,6 +130,16 @@ class ComponentManager:
             summary[component_id]["corridors"].append(corridor_idx)
         return dict(summary)
 
+    def component_sizes(self) -> Dict[int, int]:
+        sizes = {}
+        for room_idx in range(len(self._room_components)):
+            component_id = self.room_component(room_idx)
+            sizes[component_id] = sizes.get(component_id, 0) + 1
+        for corridor_idx in range(len(self._corridor_components)):
+            component_id = self.corridor_component(corridor_idx)
+            sizes[component_id] = sizes.get(component_id, 0) + 1
+        return sizes
+
     def total_components(self) -> int:
         return len(self._active_components())
 

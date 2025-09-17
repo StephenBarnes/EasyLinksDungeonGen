@@ -57,43 +57,57 @@ class DungeonGenerator:
         )
 
         # Step 2: Run our growers repeatedly. Re-run simpler rules until they terminate.
-        def run_connection_growers() -> None:
-            run_room_to_room_grower(context)
+        def run_connection_growers() -> int:
+            total_created = run_room_to_room_grower(context)
             num_created_local = 1
             while num_created_local > 0:
                 num_created_local = run_room_to_corridor_grower(context, fill_probability=1)
                 num_created_local += run_room_to_room_grower(context)
+                total_created += num_created_local
 
             num_created_local = run_bent_room_to_room_grower(context, stop_after_first=True)
+            total_created += num_created_local
             while num_created_local > 0:
                 num_created_local = run_room_to_room_grower(context)
                 num_created_local += run_room_to_corridor_grower(context, fill_probability=1)
+                total_created += num_created_local
                 if num_created_local == 0:
                     num_created_local = run_bent_room_to_room_grower(context, stop_after_first=True)
+                    total_created += num_created_local
 
             num_created_local = run_bent_room_to_corridor_grower(
                 context,
                 stop_after_first=True,
                 fill_probability=1,
             )
+            total_created += num_created_local
             while num_created_local > 0:
                 num_created_local = run_room_to_room_grower(context)
                 num_created_local += run_room_to_corridor_grower(context, fill_probability=1)
+                total_created += num_created_local
                 if num_created_local == 0:
                     num_created_local = run_bent_room_to_corridor_grower(
                         context,
                         stop_after_first=True,
                         fill_probability=1,
                     )
+                    total_created += num_created_local
+            return total_created
 
-        run_connection_growers()
+        num_created = 1
+        while num_created > 0:
+            num_created = run_connection_growers()
 
-        rotated_rooms = run_rotate_rooms_grower(context)
-        if rotated_rooms > 0:
-            run_connection_growers()
+        num_created = 1
+        while num_created > 0:
+            num_created = 0
+            rotated_rooms = run_rotate_rooms_grower(context)
+            if rotated_rooms > 0:
+                num_created = run_connection_growers()
 
         num_created = run_through_corridor_grower(context)
         while num_created > 0:
             num_created = run_through_corridor_grower(context)
+            num_created += run_connection_growers()
 
         # Additional growers will be invoked here, then step 3.

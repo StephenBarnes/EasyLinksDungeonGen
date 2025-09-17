@@ -61,6 +61,9 @@ class DungeonLayout:
     def get_component_summary(self) -> Dict[int, Dict[str, List[int]]]:
         return self.component_manager.component_summary()
 
+    def get_component_sizes(self) -> Dict[int, int]:
+        return self.component_manager.component_sizes()
+
     def set_room_component(self, room_idx: int, component_id: int) -> int:
         root = self.component_manager.set_room_component(room_idx, component_id)
         self.placed_rooms[room_idx].component_id = root
