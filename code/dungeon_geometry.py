@@ -6,7 +6,31 @@ import math
 from dataclasses import dataclass
 from typing import Tuple
 
-Point = Tuple[float, float]
+
+@dataclass(frozen=True)
+class TilePos:
+    """Integer tile coordinate."""
+
+    x: int
+    y: int
+
+    def __iter__(self):
+        yield self.x
+        yield self.y
+
+    def __getitem__(self, index: int) -> int:
+        if index == 0:
+            return self.x
+        if index == 1:
+            return self.y
+        raise IndexError("TilePos only supports two coordinates")
+
+    def to_tuple(self) -> Tuple[int, int]:
+        return self.x, self.y
+
+    @classmethod
+    def from_tuple(cls, value: Tuple[int, int]) -> TilePos:
+        return cls(*value)
 
 
 @dataclass(frozen=True)
@@ -47,31 +71,30 @@ class Rect:
             self.height + 2 * margin,
         )
 
-    def contains(self, point: Point) -> bool:
-        """Return True if the provided point lies inside this rect."""
-        px, py = point
-        return self.x <= px < self.max_x and self.y <= py < self.max_y
+    def contains(self, point: TilePos) -> bool:
+        """Return True if the provided tile lies inside this rect."""
+        return self.x <= point.x < self.max_x and self.y <= point.y < self.max_y
 
     def to_tuple(self) -> Tuple[int, int, int, int]:
         """Return the rect as an ``(x, y, width, height)`` tuple."""
         return self.x, self.y, self.width, self.height
 
 
-def port_tiles_from_world_pos(world_x: float, world_y: float) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+def port_tiles_from_world_pos(world_x: float, world_y: float) -> Tuple[TilePos, TilePos]:
     """Derive the 1x2 or 2x1 tile footprint for a port center point."""
     frac_x = world_x - math.floor(world_x)
     frac_y = world_y - math.floor(world_y)
     if math.isclose(frac_x, 0.5, abs_tol=1e-6):
         base_y = int(round(world_y))
         return (
-            (int(math.floor(world_x)), base_y),
-            (int(math.ceil(world_x)), base_y),
+            TilePos(int(math.floor(world_x)), base_y),
+            TilePos(int(math.ceil(world_x)), base_y),
         )
     if math.isclose(frac_y, 0.5, abs_tol=1e-6):
         base_x = int(round(world_x))
         return (
-            (base_x, int(math.floor(world_y))),
-            (base_x, int(math.ceil(world_y))),
+            TilePos(base_x, int(math.floor(world_y))),
+            TilePos(base_x, int(math.ceil(world_y))),
         )
     raise ValueError(f"Port center must have exactly one half coordinate, got {(world_x, world_y)}")
 

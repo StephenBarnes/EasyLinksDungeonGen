@@ -16,7 +16,7 @@ from dungeon_constants import (
     VALID_ROTATIONS,
     MAX_CONSECUTIVE_LIMIT_FAILURES,
 )
-from dungeon_geometry import rotate_direction
+from dungeon_geometry import TilePos, rotate_direction
 from dungeon_models import RoomKind, Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
 
 
@@ -27,8 +27,8 @@ class PortRequirement:
     center: Tuple[float, float]
     direction: Tuple[int, int]
     width: int
-    inside_tiles: Tuple[Tuple[int, int], ...]
-    outside_tiles: Tuple[Tuple[int, int], ...]
+    inside_tiles: Tuple[TilePos, ...]
+    outside_tiles: Tuple[TilePos, ...]
     source: str
     geometry: Optional[CorridorGeometry] = None
     room_index: Optional[int] = None
@@ -67,8 +67,8 @@ class DungeonGenerator:
         self.room_components: List[int] = []
         self.corridors: List[Corridor] = []
         self.corridor_components: List[int] = []
-        self.corridor_tiles: Set[Tuple[int, int]] = set()
-        self.corridor_tile_index: Dict[Tuple[int, int], List[int]] = {}
+        self.corridor_tiles: Set[TilePos] = set()
+        self.corridor_tile_index: Dict[TilePos, List[int]] = {}
         self.room_corridor_links: Set[Tuple[int, int]] = set()
         self.grid = [[" " for _ in range(width)] for _ in range(height)]
         # Probability distribution for number of immediate direct links per room
@@ -358,19 +358,19 @@ class DungeonGenerator:
                 rooms_placed += self._spawn_direct_links_recursive(child)
         return rooms_placed
 
-    def _build_room_tile_lookup(self) -> Dict[Tuple[int, int], int]:
+    def _build_room_tile_lookup(self) -> Dict[TilePos, int]:
         """Map each room tile to its owning room index for collision checks."""
-        tile_to_room: Dict[Tuple[int, int], int] = {}
+        tile_to_room: Dict[TilePos, int] = {}
         for idx, room in enumerate(self.placed_rooms):
             bounds = room.get_bounds()
             for ty in range(bounds.y, bounds.max_y):
                 for tx in range(bounds.x, bounds.max_x):
-                    tile_to_room[(tx, ty)] = idx
+                    tile_to_room[TilePos(tx, ty)] = idx
         return tile_to_room
 
-    def _build_corridor_tile_lookup(self) -> Dict[Tuple[int, int], List[int]]:
+    def _build_corridor_tile_lookup(self) -> Dict[TilePos, List[int]]:
         """Map corridor tiles to the corridors occupying them."""
-        tile_to_corridors: Dict[Tuple[int, int], List[int]] = {}
+        tile_to_corridors: Dict[TilePos, List[int]] = {}
         for corridor_idx, corridor in enumerate(self.corridors):
             for tile in corridor.geometry.tiles:
                 tile_to_corridors.setdefault(tile, []).append(corridor_idx)
@@ -595,14 +595,14 @@ class DungeonGenerator:
     def _room_overlaps_disallowed_corridor_tiles(
         self,
         room: PlacedRoom,
-        allowed_tiles: Set[Tuple[int, int]],
+        allowed_tiles: Set[TilePos],
         allowed_corridors: Set[int],
-    ) -> Tuple[bool, Dict[int, Set[Tuple[int, int]]]]:
+    ) -> Tuple[bool, Dict[int, Set[TilePos]]]:
         bounds = room.get_bounds()
-        overlaps_by_corridor: Dict[int, Set[Tuple[int, int]]] = defaultdict(set)
+        overlaps_by_corridor: Dict[int, Set[TilePos]] = defaultdict(set)
         for ty in range(bounds.y, bounds.max_y):
             for tx in range(bounds.x, bounds.max_x):
-                tile = (tx, ty)
+                tile = TilePos(tx, ty)
                 if tile not in self.corridor_tiles:
                     continue
                 owners = self.corridor_tile_index.get(tile, [])
@@ -615,25 +615,25 @@ class DungeonGenerator:
         return False, {corridor: set(tiles) for corridor, tiles in overlaps_by_corridor.items()}
 
     @staticmethod
-    def _world_port_tiles_for_width(port: WorldPort, width: int) -> Tuple[Tuple[int, int], ...]:
+    def _world_port_tiles_for_width(port: WorldPort, width: int) -> Tuple[TilePos, ...]:
         if width <= 0 or width % 2 != 0:
             raise ValueError("Port width must be a positive even number")
 
         tile_a, tile_b = port.tiles
-        if tile_a[0] == tile_b[0]:
-            x = tile_a[0]
-            y0, y1 = sorted((tile_a[1], tile_b[1]))
+        if tile_a.x == tile_b.x:
+            x = tile_a.x
+            y0, y1 = sorted((tile_a.y, tile_b.y))
             extent = (width // 2) - 1
             start_y = y0 - extent
             end_y = start_y + width - 1
-            return tuple((x, y) for y in range(start_y, end_y + 1))
+            return tuple(TilePos(x, y) for y in range(start_y, end_y + 1))
 
-        y = tile_a[1]
-        x0, x1 = sorted((tile_a[0], tile_b[0]))
+        y = tile_a.y
+        x0, x1 = sorted((tile_a.x, tile_b.x))
         extent = (width // 2) - 1
         start_x = x0 - extent
         end_x = start_x + width - 1
-        return tuple((x, y) for x in range(start_x, end_x + 1))
+        return tuple(TilePos(x, y) for x in range(start_x, end_x + 1))
 
     def _trim_geometry_for_room(
         self,
@@ -648,12 +648,12 @@ class DungeonGenerator:
         step = 1 if end_axis > start_axis else -1
         bounds = room.get_bounds()
 
-        def tile_inside(tile: Tuple[int, int]) -> bool:
+        def tile_inside(tile: TilePos) -> bool:
             return bounds.contains(tile)
 
-        grouped: List[Tuple[int, List[Tuple[int, int]]]] = []
+        grouped: List[Tuple[int, List[TilePos]]] = []
         current_axis: Optional[int] = None
-        current_tiles: List[Tuple[int, int]] = []
+        current_tiles: List[TilePos] = []
         for tile in geometry.tiles:
             axis_value = tile[axis_index]
             if current_axis is None or axis_value != current_axis:

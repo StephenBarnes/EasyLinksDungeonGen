@@ -8,7 +8,13 @@ from enum import Enum
 from typing import FrozenSet, List, Optional, Tuple
 
 from dungeon_constants import DOOR_MACRO_ALIGNMENT_OFFSETS, MACRO_GRID_SIZE, VALID_ROTATIONS
-from dungeon_geometry import Rect, port_tiles_from_world_pos, rotate_direction, rotate_point
+from dungeon_geometry import (
+    Rect,
+    TilePos,
+    port_tiles_from_world_pos,
+    rotate_direction,
+    rotate_point,
+)
 
 
 class RoomKind(Enum):
@@ -97,28 +103,28 @@ class RoomTemplate:
 
     def validate_ports(self):
         """Validate per-port geometry and collect occupancy footprints at max width."""
-        occupied_tiles: dict[tuple[int, int], int] = {}
+        occupied_tiles: dict[TilePos, int] = {}
         width, height = self.size
         eps = 1e-6
 
-        def _max_width_tiles(port: PortTemplate, max_width: int) -> tuple[tuple[int, int], ...]:
+        def _max_width_tiles(port: PortTemplate, max_width: int) -> tuple[TilePos, ...]:
             base_tiles = port_tiles_from_world_pos(port.pos[0], port.pos[1])
             tile_a, tile_b = base_tiles
-            if tile_a[0] == tile_b[0]:
+            if tile_a.x == tile_b.x:
                 # Vertical doorway (extends along Y).
-                x = tile_a[0]
-                y0, y1 = sorted((tile_a[1], tile_b[1]))
+                x = tile_a.x
+                y0, y1 = sorted((tile_a.y, tile_b.y))
                 extent = (max_width // 2) - 1
                 start_y = y0 - extent
                 end_y = start_y + max_width - 1
-                return tuple((x, y) for y in range(start_y, end_y + 1))
+                return tuple(TilePos(x, y) for y in range(start_y, end_y + 1))
             # Horizontal doorway (extends along X).
-            y = tile_a[1]
-            x0, x1 = sorted((tile_a[0], tile_b[0]))
+            y = tile_a.y
+            x0, x1 = sorted((tile_a.x, tile_b.x))
             extent = (max_width // 2) - 1
             start_x = x0 - extent
             end_x = start_x + max_width - 1
-            return tuple((x, y) for x in range(start_x, end_x + 1))
+            return tuple(TilePos(x, y) for x in range(start_x, end_x + 1))
 
         for port_index, port in enumerate(self.ports):
             px, py = port.pos
@@ -175,16 +181,16 @@ class RoomTemplate:
                 )
 
             max_tiles = _max_width_tiles(port, max_width)
-            for tile_x, tile_y in max_tiles:
-                if tile_x < 0 or tile_x >= width or tile_y < 0 or tile_y >= height:
+            for tile in max_tiles:
+                if tile.x < 0 or tile.x >= width or tile.y < 0 or tile.y >= height:
                     raise ValueError(
                         f"Room {self.name} port {port_index} width {max_width} exceeds room bounds"
                     )
-                if (not self.allow_door_overlaps) and (tile_x, tile_y) in occupied_tiles:
+                if (not self.allow_door_overlaps) and tile in occupied_tiles:
                     raise ValueError(
-                        f"Room {self.name} ports {occupied_tiles[(tile_x, tile_y)]} and {port_index} overlap at tile {(tile_x, tile_y)} when at max width"
+                        f"Room {self.name} ports {occupied_tiles[tile]} and {port_index} overlap at tile {tile.to_tuple()} when at max width"
                     )
-                occupied_tiles[(tile_x, tile_y)] = port_index
+                occupied_tiles[tile] = port_index
 
     def validate_macrogrid_alignment(self):
         width, height = self.size
@@ -243,7 +249,7 @@ class WorldPort:
     """Port information after converting to world coordinates."""
 
     pos: Tuple[float, float]
-    tiles: Tuple[Tuple[int, int], Tuple[int, int]]
+    tiles: Tuple[TilePos, TilePos]
     direction: Tuple[int, int]
     widths: FrozenSet[int]
 
@@ -252,7 +258,7 @@ class WorldPort:
 class CorridorGeometry:
     """Holds the tile layout for a corridor between two ports."""
 
-    tiles: Tuple[Tuple[int, int], ...]
+    tiles: Tuple[TilePos, ...]
     axis_index: Optional[int]  # 0 for horizontal, 1 for vertical, None for joints
     port_axis_values: Tuple[int, int]
     cross_coords: Tuple[int, ...] = ()
