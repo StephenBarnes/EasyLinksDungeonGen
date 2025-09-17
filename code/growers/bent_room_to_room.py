@@ -26,7 +26,7 @@ import random
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
-from geometry import TilePos, VALID_ROTATIONS
+from geometry import TilePos
 from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, WorldPort
 
 from growers.base import (
@@ -180,39 +180,29 @@ class BentRoomGeometryPlanner(GeometryPlanner[BentRoomCandidate, BentRoomPlan]):
             return None
 
         for width in width_options:
-                    temp_room, template, rotation = None, None, None
-                    for template in bend_templates:
-                        for rotation in VALID_ROTATIONS:
-                            # TODO: cache pre-rotated ports per template to avoid
-                            # repeatedly instantiating `PlacedRoom` for identical
-                            # rotation-width combinations.
-                            temp_room = PlacedRoom(template, 0, 0, rotation)
-                    assert temp_room is not None
-                    assert template is not None
-                    assert rotation is not None
+            for template in bend_templates:
+                for rotation in template.unique_rotations():
+                    variant = template.rotation_variant(rotation)
 
-                    rotated_ports = temp_room.get_world_ports()
-
-                    horizontal_candidates = [
-                        (idx, rp)
-                        for idx, rp in enumerate(rotated_ports)
-                        if rp.direction == horizontal_dir.opposite()
-                    ]
-                    vertical_candidates = [
-                        (idx, rp)
-                        for idx, rp in enumerate(rotated_ports)
-                        if rp.direction == vertical_dir.opposite()
-                    ]
-
-                    if not horizontal_candidates or not vertical_candidates:
+                    horizontal_indices = variant.ports_by_direction.get(
+                        horizontal_dir.opposite(),
+                        (),
+                    )
+                    vertical_indices = variant.ports_by_direction.get(
+                        vertical_dir.opposite(),
+                        (),
+                    )
+                    if not horizontal_indices or not vertical_indices:
                         continue
 
-                    for bend_h_idx, bend_h_port in horizontal_candidates:
+                    for bend_h_idx in horizontal_indices:
+                        bend_h_port = variant.ports[bend_h_idx]
                         if width not in bend_h_port.widths:
                             continue
-                        for bend_v_idx, bend_v_port in vertical_candidates:
+                        for bend_v_idx in vertical_indices:
                             if bend_v_idx == bend_h_idx:
                                 continue
+                            bend_v_port = variant.ports[bend_v_idx]
                             if width not in bend_v_port.widths:
                                 continue
 

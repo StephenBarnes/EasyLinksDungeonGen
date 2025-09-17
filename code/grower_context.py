@@ -11,9 +11,9 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from dungeon_config import DungeonConfig
 from dungeon_layout import DungeonLayout
-from geometry import Direction, TilePos, VALID_ROTATIONS
+from geometry import Direction, TilePos
 from growers.port_requirement import PortRequirement
-from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, RoomTemplate, WorldPort
+from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, RoomTemplate, RotatedPortTemplate, WorldPort
 
 
 @dataclass
@@ -59,7 +59,7 @@ class GrowerContext:
     # Port and corridor utilities
     # ------------------------------------------------------------------
     @staticmethod
-    def port_exit_axis_value(port: WorldPort, axis_index: int) -> int:
+    def port_exit_axis_value(port: WorldPort | RotatedPortTemplate, axis_index: int) -> int:
         axis_values = [coord[axis_index] for coord in port.tiles]
         facing = port.direction.dx if axis_index == 0 else port.direction.dy
         if facing > 0:
@@ -492,7 +492,7 @@ class GrowerContext:
             return candidates
 
         for template in template_candidates:
-            for rotation in VALID_ROTATIONS:
+            for rotation in template.unique_rotations():
                 base_room = PlacedRoom(template, 0, 0, rotation)
                 rotated_ports = base_room.get_world_ports()
                 if len(rotated_ports) < len(required_ports):

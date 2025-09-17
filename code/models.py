@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import FrozenSet, List, Optional, Tuple
+from typing import Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from constants import door_macro_alignment_offsets
 from geometry import (
@@ -57,6 +57,25 @@ class PortTemplate:
 
 
 @dataclass
+class RotatedPortTemplate:
+    """Port geometry expressed in template-local coordinates after rotation."""
+
+    pos: Tuple[float, float]
+    tiles: Tuple[TilePos, TilePos]
+    direction: Direction
+    widths: FrozenSet[int]
+
+
+@dataclass(frozen=True)
+class RotatedRoomVariant:
+    """Precomputed port data for a specific rotation of a room template."""
+
+    rotation: Rotation
+    ports: Tuple[RotatedPortTemplate, ...]
+    ports_by_direction: Mapping[Direction, Tuple[int, ...]]
+
+
+@dataclass
 class RoomTemplate:
     """Defines the blueprint for a type of room in its default rotation."""
 
@@ -77,6 +96,9 @@ class RoomTemplate:
     macro_grid_size: int = 4
     is_symmetric_90: bool = field(init=False)
     is_symmetric_180: bool = field(init=False)
+    _unique_rotations: Tuple[Rotation, ...] = field(init=False, repr=False)
+    _rotation_alias_map: Dict[Rotation, Rotation] = field(init=False, repr=False)
+    _rotation_variants: Dict[Rotation, RotatedRoomVariant] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         width, height = self.size
@@ -88,6 +110,7 @@ class RoomTemplate:
         self.four_way_weight = float(self.four_way_weight)
         self.validate()
         self._initialize_symmetry_flags()
+        self._precompute_rotations()
 
     def validate(self):
         """Run several validations to check that our room templates and their ports obey constraints."""
@@ -312,6 +335,68 @@ class RoomTemplate:
         entries.sort()
         return tuple(entries)
 
+    def _precompute_rotations(self) -> None:
+        alias_map: Dict[Rotation, Rotation] = {}
+        variants: Dict[Rotation, RotatedRoomVariant] = {}
+        unique_rotations: List[Rotation] = []
+        seen_signatures: Dict[Tuple[Tuple[int, int, Tuple[int, int], Tuple[int, ...]], ...], Rotation] = {}
+
+        for rotation in VALID_ROTATIONS:
+            signature = self._rotation_signature(rotation)
+            canonical = seen_signatures.get(signature)
+            if canonical is None:
+                canonical = rotation
+                seen_signatures[signature] = canonical
+                unique_rotations.append(canonical)
+                ports = self._build_rotated_ports(canonical)
+                ports_by_dir: Dict[Direction, List[int]] = {}
+                for idx, port in enumerate(ports):
+                    ports_by_dir.setdefault(port.direction, []).append(idx)
+                variants[canonical] = RotatedRoomVariant(
+                    rotation=canonical,
+                    ports=tuple(ports),
+                    ports_by_direction={direction: tuple(indices) for direction, indices in ports_by_dir.items()},
+                )
+            alias_map[rotation] = canonical
+
+        self._unique_rotations = tuple(unique_rotations)
+        self._rotation_alias_map = alias_map
+        self._rotation_variants = variants
+
+    def _build_rotated_ports(self, rotation: Rotation) -> List[RotatedPortTemplate]:
+        width, height = self.size
+        ports: List[RotatedPortTemplate] = []
+        for port in self.ports:
+            rotated_x, rotated_y = rotate_point(port.pos[0], port.pos[1], width, height, rotation)
+            rotated_dir = rotate_direction(port.direction, rotation)
+            tiles = port_tiles_from_world_pos(rotated_x, rotated_y)
+            ports.append(
+                RotatedPortTemplate(
+                    pos=(rotated_x, rotated_y),
+                    tiles=tiles,
+                    direction=rotated_dir,
+                    widths=port.widths,
+                )
+            )
+        return ports
+
+    def unique_rotations(self) -> Tuple[Rotation, ...]:
+        """Return rotations that produce distinct port layouts for this template."""
+        return self._unique_rotations
+
+    def canonical_rotation(self, rotation: Rotation) -> Rotation:
+        """Map an arbitrary rotation to its canonical representative for this template."""
+        return self._rotation_alias_map[rotation]
+
+    def rotation_variant(self, rotation: Rotation) -> RotatedRoomVariant:
+        """Return the precomputed variant for the requested rotation."""
+        canonical = self.canonical_rotation(rotation)
+        return self._rotation_variants[canonical]
+
+    def rotated_ports(self, rotation: Rotation) -> Tuple[RotatedPortTemplate, ...]:
+        """Return template-local ports for the requested rotation."""
+        return self.rotation_variant(rotation).ports
+
 @dataclass(frozen=True)
 class WorldPort:
     """Port information after converting to world coordinates."""
@@ -389,23 +474,23 @@ class PlacedRoom:
 
     def get_world_ports(self) -> List[WorldPort]:
         """Calculates the real-world positions and directions of ports after rotation."""
+        variant = self.template.rotation_variant(self.rotation)
+        x_offset = self.x
+        y_offset = self.y
         world_ports: List[WorldPort] = []
-        w, h = self.template.size
 
-        for port in self.template.ports:
-            rp_x, rp_y = rotate_point(port.pos[0], port.pos[1], w, h, self.rotation)
-            rotated_direction = rotate_direction(port.direction, self.rotation)
-
-            world_x = self.x + rp_x
-            world_y = self.y + rp_y
-            tiles = port_tiles_from_world_pos(world_x, world_y)
-
+        for rotated_port in variant.ports:
+            world_x = x_offset + rotated_port.pos[0]
+            world_y = y_offset + rotated_port.pos[1]
+            tiles = tuple(
+                TilePos(tile.x + x_offset, tile.y + y_offset) for tile in rotated_port.tiles
+            )
             world_ports.append(
                 WorldPort(
                     pos=(world_x, world_y),
-                    tiles=tiles,
-                    direction=rotated_direction,
-                    widths=port.widths,
+                    tiles=tiles, # type: ignore
+                    direction=rotated_port.direction,
+                    widths=rotated_port.widths,
                 )
             )
 

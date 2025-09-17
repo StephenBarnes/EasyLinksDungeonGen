@@ -52,3 +52,44 @@ Grower performance summary:
   room_to_room: invocations=223, total_time=244.2ms, avg_time=1.1ms, avg_rooms=0.00, avg_corridors=0.15
   through_corridor: invocations=43, total_time=87.0ms, avg_time=2.0ms, avg_rooms=0.84, avg_corridors=0.84
   rotate_rooms: invocations=28, total_time=3.1ms, avg_time=0.1ms, avg_rooms=0.00, avg_corridors=0.00
+
+
+Benchmark big, before rotation precomputation optimization:
+
+Run 01: 61.679s (seed 822989) | largest component 100.0% | diversity 0.359
+Run 02: 83.528s (seed 546222) | largest component 100.0% | diversity 0.396
+Run 03: 38.610s (seed 442529) | largest component 96.8% | diversity 0.396
+Run 04: 43.218s (seed 757263) | largest component 100.0% | diversity 0.351
+Run 05: 59.426s (seed 362401) | largest component 100.0% | diversity 0.370
+
+Config runs: 5
+Mean generation time: 57.292s
+Median generation time: 59.426s
+Worst-case generation time: 83.528s (seed 546222)
+Largest connected component: mean 99.4%, median 100.0%, success rate 100.0% for threshold 80.0%
+Room diversity (1 - Gini): mean 0.374, median 0.370, p5 0.352, success rate 0.0% for threshold 0.400
+
+Room template distribution across runs:
+  room_8x6_2doors: 442 rooms (38.5% of 1149 total rooms)
+  room_8x8_4doors: 247 rooms (21.5% of 1149 total rooms)
+  junction_4x4_3doors: 113 rooms (9.8% of 1149 total rooms)
+  room_6x6_90deg: 61 rooms (5.3% of 1149 total rooms)
+  junction_2x4: 53 rooms (4.6% of 1149 total rooms)
+  room_8x10_5doors: 47 rooms (4.1% of 1149 total rooms)
+  room_6x4_deadend: 47 rooms (4.1% of 1149 total rooms)
+  junction_4x4: 44 rooms (3.8% of 1149 total rooms)
+  junction_2x2: 33 rooms (2.9% of 1149 total rooms)
+  bend_4x4_right: 16 rooms (1.4% of 1149 total rooms)
+  bend_4x4_left: 13 rooms (1.1% of 1149 total rooms)
+  bend_2x4_right: 12 rooms (1.0% of 1149 total rooms)
+  bend_2x4_left: 9 rooms (0.8% of 1149 total rooms)
+  bend_2x2_left: 6 rooms (0.5% of 1149 total rooms)
+  bend_2x2_right: 6 rooms (0.5% of 1149 total rooms)
+
+Grower performance summary:
+  bent_room_to_corridor: invocations=128, total_time=233.866s, avg_time=1.827s, avg_rooms=1.27, avg_corridors=1.90
+  room_to_room: invocations=240, total_time=44.511s, avg_time=185.5ms, avg_rooms=0.00, avg_corridors=0.09
+  room_to_corridor: invocations=193, total_time=5.121s, avg_time=26.5ms, avg_rooms=0.83, avg_corridors=1.67
+  bent_room_to_room: invocations=66, total_time=1.685s, avg_time=25.5ms, avg_rooms=0.29, avg_corridors=0.58
+  through_corridor: invocations=40, total_time=1.224s, avg_time=30.6ms, avg_rooms=13.70, avg_corridors=13.70
+  rotate_rooms: invocations=7, total_time=0.5ms, avg_time=0.1ms, avg_rooms=0.00, avg_corridors=0.00

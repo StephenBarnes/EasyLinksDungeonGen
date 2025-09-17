@@ -22,21 +22,18 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, replace
-from typing import (
-    TYPE_CHECKING,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-)
+from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
 
-from geometry import Direction, Rotation, TilePos, VALID_ROTATIONS
-from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, RoomTemplate, WorldPort
+from geometry import Direction, Rotation, TilePos
+from models import (
+    Corridor,
+    CorridorGeometry,
+    PlacedRoom,
+    RoomKind,
+    RoomTemplate,
+    WorldPort,
+    RotatedPortTemplate,
+)
 
 from growers.base import (
     CandidateFinder,
@@ -72,16 +69,6 @@ class BentRoomToCorridorPlan:
     requirement_mapping: Dict[str, int]
     port_mapping: Dict[int, int]
     junction_room: PlacedRoom
-
-
-@dataclass(frozen=True)
-class _BendRotationCache:
-    template: RoomTemplate
-    rotation: Rotation
-    ports: Tuple[WorldPort, ...]
-    ports_by_direction: Mapping[Direction, Tuple[int, ...]]
-
-
 class BentRoomToCorridorCandidateFinder(
     CandidateFinder[BentRoomToCorridorCandidate, BentRoomToCorridorPlan]
 ):
@@ -124,7 +111,6 @@ class BentRoomToCorridorGeometryPlanner(
     def __init__(self, max_room_distance: int = 8, fill_probability: float = 1.0) -> None:
         self.max_room_distance = max_room_distance
         self.fill_probability = fill_probability
-        self._bend_rotation_cache: Dict[Tuple[int, Rotation], _BendRotationCache] = {}
 
     def plan(
         self,
@@ -159,31 +145,6 @@ class BentRoomToCorridorGeometryPlanner(
                 return plan
         return None
 
-    def _get_bend_rotation_cache(
-        self,
-        template: RoomTemplate,
-        rotation: Rotation,
-    ) -> _BendRotationCache:
-        key = (id(template), rotation)
-        cached = self._bend_rotation_cache.get(key)
-        if cached is not None:
-            return cached
-
-        base_room = PlacedRoom(template, 0, 0, rotation)
-        ports = tuple(base_room.get_world_ports())
-        direction_map: Dict[Direction, List[int]] = {}
-        for idx, port in enumerate(ports):
-            direction_map.setdefault(port.direction, []).append(idx)
-
-        cached = _BendRotationCache(
-            template=template,
-            rotation=base_room.rotation,
-            ports=ports,
-            ports_by_direction={direction: tuple(indices) for direction, indices in direction_map.items()},
-        )
-        self._bend_rotation_cache[key] = cached
-        return cached
-
     def _build_plan_for_width(
         self,
         context: GrowerContext,
@@ -209,12 +170,12 @@ class BentRoomToCorridorGeometryPlanner(
         perpendicular_dirs = tuple(dir_ for dir_ in Direction if dir_.dot(direction) == 0)
 
         for template in bend_templates:
-            for rotation in VALID_ROTATIONS:
-                rotation_cache = self._get_bend_rotation_cache(template, rotation)
+            for rotation in template.unique_rotations():
+                variant = template.rotation_variant(rotation)
                 matching_indices = [
-                    (idx, rotation_cache.ports[idx])
-                    for idx in rotation_cache.ports_by_direction.get(direction.opposite(), ())
-                    if width in rotation_cache.ports[idx].widths
+                    (idx, variant.ports[idx])
+                    for idx in variant.ports_by_direction.get(direction.opposite(), ())
+                    if width in variant.ports[idx].widths
                 ]
                 if not matching_indices:
                     continue
@@ -222,7 +183,7 @@ class BentRoomToCorridorGeometryPlanner(
                 matching_index_set = {idx for idx, _ in matching_indices}
                 branch_indices = [
                     (idx, port)
-                    for idx, port in enumerate(rotation_cache.ports)
+                    for idx, port in enumerate(variant.ports)
                     if idx not in matching_index_set
                     and port.direction in perpendicular_dirs
                     and width in port.widths
@@ -236,7 +197,8 @@ class BentRoomToCorridorGeometryPlanner(
                             context,
                             candidate,
                             width,
-                            rotation_cache,
+                            template,
+                            rotation,
                             match_idx,
                             match_port,
                             branch_idx,
@@ -258,11 +220,12 @@ class BentRoomToCorridorGeometryPlanner(
         context: GrowerContext,
         candidate: BentRoomToCorridorCandidate,
         width: int,
-        bend_rotation_cache: _BendRotationCache,
+        template: RoomTemplate,
+        rotation: Rotation,
         match_idx: int,
-        match_port: WorldPort,
+        match_port: RotatedPortTemplate,
         branch_idx: int,
-        branch_port: WorldPort,
+        branch_port: RotatedPortTemplate,
         axis_index: int,
         axis_dir: int,
         candidate_exit_axis: int,
@@ -303,12 +266,7 @@ class BentRoomToCorridorGeometryPlanner(
             else:
                 tx, ty = perp_translation, axis_translation
 
-            placed_bend = PlacedRoom(
-                bend_rotation_cache.template,
-                tx,
-                ty,
-                bend_rotation_cache.rotation,
-            )
+            placed_bend = PlacedRoom(template, tx, ty, rotation)
             if not context.layout.is_valid_placement(placed_bend):
                 continue
 
