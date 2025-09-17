@@ -1,6 +1,10 @@
-- Track graph of rooms and corridors, so that we can figure out whether we're creating a short cycle. This should be in dungeon_layout probably. And define a function to get the graph distance from any given corridor or room to any other corridor or room.
+- Add a RoomKind.DIRECT_LINKED.
 
-- Modify current bent_room_to_room to not only make bent corridors between different components, but rather to also allow within-component bent connections, if doing so doesn't create a short cycle.
+- Use different intra-component connection thresholds for different growers.
+
+- Place all root rooms in a smaller rectangle, say only in the central 80% of the map along each direction. Add a DungeonConfig field for this 80% value. Also adjust the _categorize_side_distance function in root_room_placer.py to adjust for the smaller size.
+
+- Add support for weights when choosing room templates for T-junctions, 4-way junctions, and bend rooms. We generally want to prefer placing the bigger options if possible, and use the tiny 2x2 or 2x4 rooms only as a last resort.
 
 - Add a grower for bent room-to-corridor. Possibly factor out some logic in bent_room_to_room and put it in grower_context.
 
@@ -10,8 +14,6 @@
 	- Consider adding a grower that looks for parallel corridors and creates a corridor between them, creating 2 T-junctions at the ends.
 - Implement the step 2 loop that repeatedly runs growers.
 - Implement step 3, deleting extra components and accepting or rejecting.
-
-- Add support for weights when choosing room templates for T-junctions, 4-way junctions, and bend rooms. We generally want to prefer placing the bigger options if possible, and use the tiny 2x2 or 2x4 rooms only as a last resort.
 
 - Add constraint: avoid making short loops. Meaning for instance if room 1 and room 2 are linked by a passage A, and room 1 is linked to another passage B, then we shouldn't create a passage C from room 2 to passage B. This would require maintaining a list of all passages connected to each room and all rooms connected to a given passage, and then checking the graph distance of things we want to connect that are in the same component, and then rejecting that connection if the graph distance is too short.
 
