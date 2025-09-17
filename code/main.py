@@ -204,27 +204,9 @@ def main() -> None:
 
     generator = DungeonGenerator(config)
 
-    # Place rooms, some with direct links
-    generator.place_rooms()
+    generator.generate()
 
-    # Create direct corridors
-    generator.grower_room_to_room()
-
-    # Create T-junctions with direct corridors
-    num_created = 1
-    while num_created > 0:
-        num_created = generator.grower_room_to_corridor(fill_probability=1)
-        num_created += generator.grower_room_to_room()
-
-    # Create bent links between rooms
-    num_created = generator.grower_bent_room_to_room()
-
-    # Re-run other growers, if we created new rooms or corridors.
-    while num_created > 0:
-        num_created = generator.grower_room_to_room()
-        num_created += generator.grower_room_to_corridor(fill_probability=1)
-
-    # Debug: check number of components
+    # Debug: check number of components is correct
     print(f"Component count: {len(generator.get_component_summary())}")
 
     generator.draw_to_grid(draw_macrogrid=True)

@@ -54,6 +54,27 @@ class DungeonGenerator:
         self.max_connected_placement_attempts = config.max_connected_placement_attempts
         self.max_consecutive_limit_failures = config.max_consecutive_limit_failures
 
+    def generate(self) -> None:
+        """Generates the dungeon, by invoking dungeon-growers."""
+        # Note: This is incomplete. Currently it runs our implemented growers in a fairly arbitrary order, mostly for testing. The final version will have more growers, and will include step 3 (counting components, deleting smaller components, and accepting or rejecting the final connected dungeon map.
+
+        # Step 1: Place rooms, some with direct links
+        self.place_rooms()
+
+        self.grower_room_to_room()
+
+        num_created = 1
+        while num_created > 0:
+            num_created = self.grower_room_to_corridor(fill_probability=1)
+            num_created += self.grower_room_to_room()
+
+        num_created = self.grower_bent_room_to_room()
+
+        # Re-run other growers, if we created new rooms or corridors.
+        while num_created > 0:
+            num_created = self.grower_room_to_room()
+            num_created += self.grower_room_to_corridor(fill_probability=1)
+
     def _is_in_bounds(self, room: PlacedRoom) -> bool:
         bounds = room.get_bounds()
         return (
