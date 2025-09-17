@@ -56,24 +56,26 @@ class DungeonGenerator:
 
     def generate(self) -> None:
         """Generates the dungeon, by invoking dungeon-growers."""
-        # Note: This is incomplete. Currently it runs our implemented growers in a fairly arbitrary order, mostly for testing. The final version will have more growers, and will include step 3 (counting components, deleting smaller components, and accepting or rejecting the final connected dungeon map.
+        # Note: This function is incomplete. Currently it runs our implemented growers in a fairly arbitrary order, mostly for testing. The final version will have more growers, and will include step 3 (counting components, deleting smaller components, and accepting or rejecting the final connected dungeon map).
 
         # Step 1: Place rooms, some with direct links
         self.place_rooms()
+        if not self.placed_rooms:
+            raise ValueError("ERROR: no placed rooms.")
 
-        self.grower_room_to_room()
-
+        # Step 2: Run our growers repeatedly.
+        run_room_to_room_grower(self)
         num_created = 1
         while num_created > 0:
-            num_created = self.grower_room_to_corridor(fill_probability=1)
-            num_created += self.grower_room_to_room()
-
-        num_created = self.grower_bent_room_to_room()
-
+            num_created = run_room_to_corridor_grower(self, fill_probability=1)
+            num_created += run_room_to_room_grower(self)
+        num_created = run_bent_room_to_room_grower(self)
         # Re-run other growers, if we created new rooms or corridors.
         while num_created > 0:
-            num_created = self.grower_room_to_room()
-            num_created += self.grower_room_to_corridor(fill_probability=1)
+            num_created = run_room_to_room_grower(self)
+            num_created += run_room_to_corridor_grower(self, fill_probability=1)
+        
+        # Additional growers will be invoked here, then step 3.
 
     def _is_in_bounds(self, room: PlacedRoom) -> bool:
         bounds = room.get_bounds()
@@ -1229,35 +1231,6 @@ class DungeonGenerator:
                             return width, placed_bend, corridors
 
         return None
-
-    def grower_room_to_room(self) -> int:
-        """Connect facing ports with straight corridors or four-way junctions."""
-        if not self.placed_rooms:
-            raise ValueError("ERROR: no placed rooms.")
-        return run_room_to_room_grower(self)
-
-
-    def grower_room_to_corridor(self, fill_probability: float) -> int:
-        """Link room ports to nearby corridors via T-junction rooms."""
-        if not self.corridors:
-            print("Room-to-corridor grower: skipped - no existing corridors to join.")
-            return 0
-        return run_room_to_corridor_grower(self, fill_probability)
-
-
-    def grower_bent_room_to_room(self) -> int:
-        """Link rooms with perpendicular ports using bend rooms."""
-        if len(self.placed_rooms) < 2:
-            print("Bent-room-to-room grower: skipped - not enough rooms to connect.")
-            return 0
-        if not self.bend_room_templates:
-            print("Bent-room-to-room grower: skipped - no bend room templates available.")
-            return 0
-        if self.component_manager.has_single_component():
-            print("Bent-room-to-room grower: skipped - already fully connected.")
-            return 0
-        return run_bent_room_to_room_grower(self)
-
 
     def place_rooms(self) -> None:
         """Implements step 1: Randomly place rooms with macro-grid aligned ports."""

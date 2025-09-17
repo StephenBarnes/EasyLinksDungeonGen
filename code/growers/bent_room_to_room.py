@@ -177,6 +177,16 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
 
 
 def run_bent_room_to_room_grower(generator: DungeonGenerator) -> int:
+    if len(generator.placed_rooms) < 2:
+        print("Bent-room-to-room grower: skipped - not enough rooms to connect.")
+        return 0
+    if not generator.bend_room_templates:
+        print("Bent-room-to-room grower: skipped - no bend room templates available.")
+        return 0
+    if generator.component_manager.has_single_component():
+        print("Bent-room-to-room grower: skipped - already fully connected.")
+        return 0
+
     grower = DungeonGrower(
         name="bent_room_to_room",
         candidate_finder=BentRoomCandidateFinder(),

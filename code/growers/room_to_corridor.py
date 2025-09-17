@@ -303,6 +303,9 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
 def run_room_to_corridor_grower(
     generator: DungeonGenerator, fill_probability: float
 ) -> int:
+    if not generator.corridors:
+        print("Room-to-corridor grower: skipped - no existing corridors to join.")
+        return 0
     grower = DungeonGrower(
         name="room_to_corridor",
         candidate_finder=RoomToCorridorCandidateFinder(),
