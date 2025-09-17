@@ -50,7 +50,7 @@ def build_default_room_templates() -> list[RoomTemplate]:
                 PortTemplate(pos=(0, 2.5), direction=Direction.WEST, widths=frozenset((2, 4))),
                 PortTemplate(pos=(7, 2.5), direction=Direction.EAST, widths=frozenset((2, 4))),
             ],
-            through_weight=3,
+            through_weight=2,
             kinds=frozenset((RoomKind.STANDALONE, RoomKind.THROUGH)),
         ),
         RoomTemplate(
@@ -206,17 +206,21 @@ def build_default_room_templates() -> list[RoomTemplate]:
 def main() -> None:
     room_templates = build_default_room_templates()
     config = DungeonConfig(
-        width=50,
+        width=120,
         height=50,
         room_templates=room_templates,
-        #direct_link_counts_probs={0: 0.55, 1: 0.25, 2: 0.15, 3: 0.05}, # Replaced for debugging
-        direct_link_counts_probs={0: 1},
-        num_rooms_to_place=3,
+        direct_link_counts_probs={0: 0.55, 1: 0.25, 2: 0.15, 3: 0.05},
+        # direct_link_counts_probs={0: 1}, # For debugging
+        num_rooms_to_place=30,
         min_room_separation=1,
         min_intra_component_connection_distance=10,
-        max_desired_corridor_length=10,
-        random_seed=860937,
+        max_desired_corridor_length=8,
+        max_parallel_corridor_perpendicular_distance=8,
+        max_parallel_corridor_overlap=5,
+        min_rooms_required=10,
+        random_seed=None,
     )
+
 
     seed = config.random_seed
     if seed is None:

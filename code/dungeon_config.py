@@ -17,19 +17,28 @@ class DungeonConfig:
     width: int
     height: int
     room_templates: Sequence[RoomTemplate]
+
     # Probability distribution for number of immediate direct links per room
-    # Example: {0: 0.4, 1: 0.3, 2: 0.3}
     direct_link_counts_probs: Mapping[int, float]
+    # Number of rooms to place; only checked before placing root rooms, so we can place more.
     num_rooms_to_place: int
     # Minimum empty tiles between room bounding boxes, unless they connect at ports.
     min_room_separation: int
-    min_rooms_required: int = 6
+    # We don't place new links if they connect things in the same component that are closer than this number in the dungeon graph.
+    min_intra_component_connection_distance: int
+    # Corridors longer than this number can be split by through-corridor grower.
+    max_desired_corridor_length: int
+    # Ban long parallel corridors if they're closer than this along perpendicular axis.
+    max_parallel_corridor_perpendicular_distance: int
+    # Ban long parallel corridors if their overlap length is over this.
+    max_parallel_corridor_overlap: int
+    # Reject final dungeon if number of rooms in largest connected component is less than this.
+    min_rooms_required: int
+
     macro_grid_size: int = 4
     random_seed: int | None = None
     max_connected_placement_attempts: int = 40
     max_consecutive_limit_failures: int = 5
-    min_intra_component_connection_distance: int = 10
-    max_desired_corridor_length: int = 10
     _door_macro_alignment_offsets: Mapping[Direction, tuple[float, float]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -50,6 +59,14 @@ class DungeonConfig:
         if self.min_intra_component_connection_distance < 0:
             raise ValueError(
                 "DungeonConfig min_intra_component_connection_distance must be non-negative"
+            )
+        if self.max_parallel_corridor_perpendicular_distance < 0:
+            raise ValueError(
+                "DungeonConfig max_parallel_corridor_perpendicular_distance must be non-negative"
+            )
+        if self.max_parallel_corridor_overlap < 0:
+            raise ValueError(
+                "DungeonConfig min_parallel_corridor_overlap must be non-negative"
             )
 
         self.room_templates = tuple(self.room_templates)

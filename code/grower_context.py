@@ -104,12 +104,15 @@ class GrowerContext:
                     return None
                 tiles.append(TilePos(x, y))
 
-        return CorridorGeometry(
+        geometry = CorridorGeometry(
             tiles=tuple(tiles),
             axis_index=axis_index,
             port_axis_values=(start_axis, end_axis),
             cross_coords=cross_coords,
         )
+        if self.layout.would_create_long_parallel(geometry):
+            return None
+        return geometry
 
     @staticmethod
     def corridor_cross_from_geometry(
@@ -198,12 +201,15 @@ class GrowerContext:
                     continue
                 return None
 
-        return CorridorGeometry(
+        geometry = CorridorGeometry(
             tiles=tuple(tiles),
             axis_index=axis_index,
             port_axis_values=(exit_a, exit_b),
             cross_coords=cross_coords,
         )
+        if self.layout.would_create_long_parallel(geometry):
+            return None
+        return geometry
 
     @staticmethod
     def port_center_from_tiles(
@@ -807,6 +813,8 @@ class GrowerContext:
                     port_axis_values=(exit_axis_value, axis_value),
                     cross_coords=tuple(cross_coords),
                 )
+                if self.layout.would_create_long_parallel(geometry):
+                    return None
                 return geometry, chosen_idx, tuple(sorted(intersection_tiles))
 
             if any(self.layout.spatial_index.has_corridor_at(tile) for tile in tiles_for_step):

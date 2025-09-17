@@ -8,7 +8,7 @@ import random
 
 from component_manager import ComponentManager
 from dungeon_config import DungeonConfig
-from models import Corridor, PlacedRoom
+from models import Corridor, CorridorGeometry, PlacedRoom
 
 GraphNode = Tuple[str, int]
 GraphEntity = Union[PlacedRoom, Corridor, Tuple[str, int]]
@@ -121,6 +121,68 @@ class DungeonLayout:
         if corridor.room_b_index is not None:
             self.room_corridor_links.add((corridor.room_b_index, corridor_idx))
         self._invalidate_graph_cache()
+
+    @staticmethod
+    def _geometry_cross_coords(geometry: CorridorGeometry) -> Tuple[int, ...]:
+        axis_index = geometry.axis_index
+        if axis_index is None:
+            return ()
+        if geometry.cross_coords:
+            return tuple(sorted(set(geometry.cross_coords)))
+        cross_values = {tile[1 - axis_index] for tile in geometry.tiles}
+        return tuple(sorted(cross_values))
+
+    def would_create_long_parallel(
+        self,
+        geometry: CorridorGeometry,
+        *,
+        skip_indices: Iterable[int] = (),
+    ) -> bool:
+        distance_threshold = self.config.max_parallel_corridor_perpendicular_distance
+        overlap_threshold = self.config.max_parallel_corridor_overlap
+        if distance_threshold <= 0 or overlap_threshold <= 0:
+            return False
+
+        axis_index = geometry.axis_index
+        if axis_index is None:
+            return False
+
+        cross_coords = self._geometry_cross_coords(geometry)
+        if not cross_coords:
+            return False
+
+        skip_set = set(skip_indices)
+        axis_start, axis_end = geometry.port_axis_values
+        axis_min = min(axis_start, axis_end)
+        axis_max = max(axis_start, axis_end)
+
+        for idx, existing in enumerate(self.corridors):
+            if idx in skip_set:
+                continue
+            existing_geometry = existing.geometry
+            if existing_geometry.axis_index != axis_index:
+                continue
+
+            existing_cross = self._geometry_cross_coords(existing_geometry)
+            if not existing_cross:
+                continue
+
+            existing_start, existing_end = existing_geometry.port_axis_values
+            existing_min = min(existing_start, existing_end)
+            existing_max = max(existing_start, existing_end)
+            axis_overlap = min(axis_max, existing_max) - max(axis_min, existing_min)
+            if axis_overlap < overlap_threshold:
+                continue
+
+            cross_distance = min(
+                abs(candidate - existing_cross_value)
+                for candidate in cross_coords
+                for existing_cross_value in existing_cross
+            )
+            if cross_distance < distance_threshold:
+                return True
+
+        return False
 
     def should_allow_connection(
         self,
