@@ -215,8 +215,8 @@ def main() -> None:
         num_created += generator.create_easy_links(step_num=3)
 
     # Print dungeon at this stage, to help check changes.
-    generator.draw_to_grid(draw_macrogrid=False)
-    generator.print_grid(horizontal_sep=" ")
+    generator.draw_to_grid(draw_macrogrid=True)
+    generator.print_grid(horizontal_sep="")
 
     # Step 4: create bent links between rooms
     num_created = generator.create_bent_room_links()
@@ -229,8 +229,8 @@ def main() -> None:
     # Debug: check number of components
     print(f"Component count: {len(generator.get_component_summary())}")
 
-    generator.draw_to_grid(draw_macrogrid=False)
-    generator.print_grid(horizontal_sep=" ")
+    generator.draw_to_grid(draw_macrogrid=True)
+    generator.print_grid(horizontal_sep="")
 
 if __name__ == "__main__":
     main()

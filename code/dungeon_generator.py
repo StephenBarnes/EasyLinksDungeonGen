@@ -84,27 +84,63 @@ class DungeonGenerator:
             and bounds.max_y <= self.height
         )
 
-    def _rooms_overlap(self, candidate: PlacedRoom, existing: PlacedRoom, margin: int) -> bool:
-        expanded_candidate = candidate.get_bounds().expand(margin)
-        return expanded_candidate.overlaps(existing.get_bounds())
-
-    def _is_valid_room_position(self, new_room: PlacedRoom, anchor_room: Optional[PlacedRoom]) -> bool:
+    def _is_valid_room_position(
+        self,
+        new_room: PlacedRoom,
+        anchor_room: Optional[PlacedRoom],
+        *,
+        ignore_corridors: Optional[Set[int]] = None,
+    ) -> bool:
         if not self._is_in_bounds(new_room):
             return False
 
-        for room in self.placed_rooms:
-            margin = 0 if anchor_room is not None and room is anchor_room else self.min_room_separation
-            if self._rooms_overlap(new_room, room, margin):
-                return False
-        return True
+        bounds = new_room.get_bounds()
+        corridor_exclusions = set(ignore_corridors or ())
+        if not self.spatial_index.is_area_clear(bounds, ignore_corridors=corridor_exclusions):
+            return False
 
-    def _is_valid_placement(self, new_room: PlacedRoom) -> bool:
+        margin = self.min_room_separation
+        if margin <= 0:
+            return True
+
+        expanded_bounds = bounds.expand(margin)
+        ignore_rooms: Set[int] = set()
+        if anchor_room is not None:
+            try:
+                anchor_index = self.placed_rooms.index(anchor_room)
+            except ValueError:
+                anchor_index = None
+            if anchor_index is not None:
+                ignore_rooms.add(anchor_index)
+
+        return self.spatial_index.is_area_clear(
+            expanded_bounds,
+            ignore_rooms=ignore_rooms,
+            ignore_corridors=corridor_exclusions,
+        )
+
+    def _is_valid_placement(
+        self,
+        new_room: PlacedRoom,
+        *,
+        ignore_corridors: Optional[Set[int]] = None,
+    ) -> bool:
         """Checks if a new room is in bounds and doesn't overlap existing rooms."""
-        return self._is_valid_room_position(new_room, None)
+        return self._is_valid_room_position(new_room, None, ignore_corridors=ignore_corridors)
 
-    def _is_valid_placement_with_anchor(self, new_room: PlacedRoom, anchor_room: PlacedRoom) -> bool:
+    def _is_valid_placement_with_anchor(
+        self,
+        new_room: PlacedRoom,
+        anchor_room: PlacedRoom,
+        *,
+        ignore_corridors: Optional[Set[int]] = None,
+    ) -> bool:
         """Validate placement allowing edge-adjacent contact with the anchor room only."""
-        return self._is_valid_room_position(new_room, anchor_room)
+        return self._is_valid_room_position(
+            new_room,
+            anchor_room,
+            ignore_corridors=ignore_corridors,
+        )
 
     def _clear_grid(self) -> None:
         for row in self.grid:
@@ -727,7 +763,9 @@ class DungeonGenerator:
                         continue
 
                     candidate = PlacedRoom(template, translation[0], translation[1], rotation)
-                    if not self._is_valid_placement(candidate):
+                    if not self._is_valid_placement(
+                        candidate, ignore_corridors=allowed_overlap_corridors
+                    ):
                         continue
                     overlaps_blocked, _ = self._room_overlaps_disallowed_corridor_tiles(
                         candidate,
@@ -1883,7 +1921,7 @@ class DungeonGenerator:
                     0 < (y % MACRO_GRID_SIZE) < MACRO_GRID_SIZE - 1
                 ):
                     continue
-                self.grid[y][x] = '░'
+                self.grid[y][x] = '.'
 
     def mark_room_interior_on_grid(self, room_idx: int) -> None:
         """Mark the interior of the specified room_idx with asterisks."""
