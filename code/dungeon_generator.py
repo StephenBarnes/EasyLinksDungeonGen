@@ -16,7 +16,7 @@ from dungeon_constants import (
     VALID_ROTATIONS,
     MAX_CONSECUTIVE_LIMIT_FAILURES,
 )
-from dungeon_geometry import TilePos, rotate_direction
+from dungeon_geometry import Direction, Rotation, TilePos, rotate_direction
 from dungeon_models import RoomKind, Corridor, CorridorGeometry, PlacedRoom, RoomTemplate, WorldPort
 
 
@@ -25,7 +25,7 @@ class PortRequirement:
     """Specifies the desired doorway placement for a special junction room."""
 
     center: Tuple[float, float]
-    direction: Tuple[int, int]
+    direction: Direction
     width: int
     inside_tiles: Tuple[TilePos, ...]
     outside_tiles: Tuple[TilePos, ...]
@@ -35,6 +35,14 @@ class PortRequirement:
     port_index: Optional[int] = None
     corridor_idx: Optional[int] = None
     corridor_end: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.direction, Direction):
+            object.__setattr__(
+                self,
+                "direction",
+                Direction.from_tuple(tuple(int(v) for v in self.direction)),
+            )
 
 
 class DungeonGenerator:
@@ -190,7 +198,7 @@ class DungeonGenerator:
 
         return summary
 
-    def _random_rotation(self) -> int:
+    def _random_rotation(self) -> Rotation:
         return random.choice(VALID_ROTATIONS)
 
     def _random_macro_grid_point(self) -> Tuple[int, int]:
@@ -204,7 +212,7 @@ class DungeonGenerator:
         return macro_x, macro_y
 
     def _build_root_room_candidate(
-        self, template: RoomTemplate, rotation: int, macro_x: int, macro_y: int
+        self, template: RoomTemplate, rotation: Rotation, macro_x: int, macro_y: int
     ) -> PlacedRoom:
         anchor_port_index = random.randrange(len(template.ports))
 
@@ -257,32 +265,33 @@ class DungeonGenerator:
         template: RoomTemplate,
         placement_category: str,
         side_proximities: Dict[str, str],
-    ) -> int:
+    ) -> Rotation:
         preferred_dir = template.preferred_center_facing_dir
         if placement_category != "edge" or preferred_dir is None:
             return self._random_rotation()
 
-        inward_directions: List[Tuple[int, int]] = []
+        inward_directions: List[Direction] = []
         if side_proximities.get("left") == "close":
-            inward_directions.append((1, 0))
+            inward_directions.append(Direction.EAST)
         if side_proximities.get("right") == "close":
-            inward_directions.append((-1, 0))
+            inward_directions.append(Direction.WEST)
         if side_proximities.get("top") == "close":
-            inward_directions.append((0, 1))
+            inward_directions.append(Direction.SOUTH)
         if side_proximities.get("bottom") == "close":
-            inward_directions.append((0, -1))
+            inward_directions.append(Direction.NORTH)
 
         if not inward_directions:
             return self._random_rotation()
 
         rotation_weights: List[float] = []
-        pdx, pdy = preferred_dir
         for rotation in VALID_ROTATIONS:
-            rotated_dir = rotate_direction(pdx, pdy, rotation)
+            rotated_dir = rotate_direction(preferred_dir, rotation)
             weight = 1.0 if rotated_dir in inward_directions else 0.0
             rotation_weights.append(weight)
 
-        return random.choices(VALID_ROTATIONS, weights=rotation_weights)[0]
+        if any(weight > 0 for weight in rotation_weights):
+            return random.choices(VALID_ROTATIONS, weights=rotation_weights)[0]
+        return self._random_rotation()
 
     def _sample_num_direct_links(self) -> int:
         """Sample n using the configured probability distribution."""
@@ -315,7 +324,8 @@ class DungeonGenerator:
         for anchor_idx in available_anchor_indices:
             awp = anchor_world_ports[anchor_idx]
             ax, ay = awp.pos
-            dx, dy = awp.direction
+            direction = awp.direction
+            dx, dy = direction.dx, direction.dy
             # Target position for the new room's connecting port so the rooms are adjacent
             target_port_pos = (ax + dx, ay + dy)
             # Candidate attempt loop
@@ -328,7 +338,9 @@ class DungeonGenerator:
                 rot_ports = temp_room.get_world_ports()
                 # Find ports facing opposite direction
                 compatible_port_indices = [
-                    i for i, p in enumerate(rot_ports) if p.direction == (-dx, -dy) and (p.widths & awp.widths)
+                    i
+                    for i, p in enumerate(rot_ports)
+                    if p.direction == direction.opposite() and (p.widths & awp.widths)
                 ]
                 if not compatible_port_indices:
                     continue
@@ -380,7 +392,7 @@ class DungeonGenerator:
     def _port_exit_axis_value(port: WorldPort, axis_index: int) -> int:
         """Return the first tile outside the room along the port's facing axis."""
         axis_values = [coord[axis_index] for coord in port.tiles]
-        facing = port.direction[axis_index]
+        facing = port.direction.dx if axis_index == 0 else port.direction.dy
         if facing > 0:
             boundary = max(axis_values)
         else:
@@ -457,8 +469,8 @@ class DungeonGenerator:
         tile_to_room: Dict[TilePos, int],
     ) -> Optional[CorridorGeometry]:
         """Return the carved tiles for a straight corridor if it's valid."""
-        dx1, dy1 = port_a.direction
-        dx2, dy2 = port_b.direction
+        dx1, dy1 = port_a.direction.dx, port_a.direction.dy
+        dx2, dy2 = port_b.direction.dx, port_b.direction.dy
         if dx1 != -dx2 or dy1 != -dy2:
             return None
 
@@ -564,9 +576,9 @@ class DungeonGenerator:
         if not outside_tiles:
             return None
         if axis_index == 0:
-            direction = (-sign, 0)
+            direction = Direction.WEST if sign > 0 else Direction.EAST
         else:
-            direction = (0, -sign)
+            direction = Direction.NORTH if sign > 0 else Direction.SOUTH
         junction_set: Optional[Set[TilePos]] = None
         if junction_tiles is not None:
             junction_set = set(junction_tiles)
@@ -574,7 +586,7 @@ class DungeonGenerator:
         if junction_set is not None and all(tile in junction_set for tile in outside_tiles):
             inside_tiles = outside_tiles
         else:
-            dx, dy = direction
+            dx, dy = direction.dx, direction.dy
             inside_tiles = tuple(TilePos(tile.x - dx, tile.y - dy) for tile in outside_tiles)
         width = len(outside_tiles)
         if width != expected_width:
@@ -948,8 +960,8 @@ class DungeonGenerator:
         tile_to_corridors: Dict[TilePos, List[int]],
     ) -> Optional[Tuple[CorridorGeometry, int, Tuple[TilePos, ...]]]:
         """Attempt to carve a straight corridor from a port to an existing corridor."""
-        axis_index = 0 if port.direction[0] != 0 else 1
-        direction = port.direction[axis_index]
+        axis_index = 0 if port.direction.dx != 0 else 1
+        direction = port.direction.dx if axis_index == 0 else port.direction.dy
         if direction == 0:
             return None
 
@@ -1088,7 +1100,10 @@ class DungeonGenerator:
         port_a = ports_a[port_a_idx]
         port_b = ports_b[port_b_idx]
 
-        dot = port_a.direction[0] * port_b.direction[0] + port_a.direction[1] * port_b.direction[1]
+        dot = (
+            port_a.direction.dx * port_b.direction.dx
+            + port_a.direction.dy * port_b.direction.dy
+        )
         if dot != 0:
             return None
 
@@ -1097,10 +1112,10 @@ class DungeonGenerator:
             return None
 
         def port_is_horizontal(port: WorldPort) -> bool:
-            return port.direction[0] != 0
+            return port.direction.dx != 0
 
         def port_is_vertical(port: WorldPort) -> bool:
-            return port.direction[1] != 0
+            return port.direction.dy != 0
 
         port_infos = [
             {"room_idx": room_a_idx, "port_idx": port_a_idx, "port": port_a},
@@ -1130,12 +1145,12 @@ class DungeonGenerator:
                     horizontal_candidates = [
                         (idx, rp)
                         for idx, rp in enumerate(rotated_ports)
-                        if rp.direction == (-horizontal_dir[0], -horizontal_dir[1])
+                        if rp.direction == horizontal_dir.opposite()
                     ]
                     vertical_candidates = [
                         (idx, rp)
                         for idx, rp in enumerate(rotated_ports)
-                        if rp.direction == (-vertical_dir[0], -vertical_dir[1])
+                        if rp.direction == vertical_dir.opposite()
                     ]
 
                     if not horizontal_candidates or not vertical_candidates:
@@ -1756,7 +1771,10 @@ class DungeonGenerator:
 
                 port_a = port_a_info["port"]
                 port_b = port_b_info["port"]
-                dot = port_a.direction[0] * port_b.direction[0] + port_a.direction[1] * port_b.direction[1]
+                dot = (
+                    port_a.direction.dx * port_b.direction.dx
+                    + port_a.direction.dy * port_b.direction.dy
+                )
                 if dot != 0:
                     continue
 

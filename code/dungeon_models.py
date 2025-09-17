@@ -9,6 +9,8 @@ from typing import FrozenSet, List, Optional, Tuple
 
 from dungeon_constants import DOOR_MACRO_ALIGNMENT_OFFSETS, MACRO_GRID_SIZE, VALID_ROTATIONS
 from dungeon_geometry import (
+    Direction,
+    Rotation,
     Rect,
     TilePos,
     port_tiles_from_world_pos,
@@ -30,16 +32,15 @@ class PortTemplate:
     """Doorway specification in template-local coordinates."""
 
     pos: Tuple[float, float]
-    direction: Tuple[int, int]
+    direction: Direction
     widths: FrozenSet[int]
 
     def __post_init__(self) -> None:
-        dx, dy = self.direction
-        if dx not in (-1, 0, 1) or dy not in (-1, 0, 1):
-            raise ValueError(f"Port direction coords must be +-1 and 0, got {dx, dy}")
-        if abs(dx) + abs(dy) != 1:
-            raise ValueError(f"Port directions must be axis-aligned, got {dx, dy}")
+        if not isinstance(self.direction, Direction):
+            self.direction = Direction.from_tuple(tuple(int(v) for v in self.direction))
 
+        direction = self.direction
+        dx, dy = direction.dx, direction.dy
         px, py = (float(self.pos[0]), float(self.pos[1]))
         if dx != 0:
             if not math.isclose(py - math.floor(py), 0.5, abs_tol=1e-6):
@@ -68,7 +69,7 @@ class RoomTemplate:
     root_weight_edge: float = 1.0  # Weight when placing room near the dungeon outskirts.
     root_weight_intermediate: float = 1.0  # Weight when placement is neither central nor edge.
     direct_weight: float = 1.0  # Weight for random choice when creating direct-linked rooms.
-    preferred_center_facing_dir: Optional[Tuple[int, int]] = None
+    preferred_center_facing_dir: Optional[Direction] = None
     allow_door_overlaps: bool = False
 
     def __post_init__(self) -> None:
@@ -83,12 +84,12 @@ class RoomTemplate:
             raise ValueError(f"Room {self.name} must have positive non-zero dimensions")
 
         if self.preferred_center_facing_dir is not None:
-            dx, dy = self.preferred_center_facing_dir
-            if (dx, dy) not in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                raise ValueError(
-                    "preferred_center_facing_dir must be a cardinal direction tuple"
-                )
-            self.preferred_center_facing_dir = (int(dx), int(dy))
+            direction = (
+                self.preferred_center_facing_dir
+                if isinstance(self.preferred_center_facing_dir, Direction)
+                else Direction.from_tuple(tuple(int(v) for v in self.preferred_center_facing_dir))
+            )
+            self.preferred_center_facing_dir = direction
 
         if not self.ports:
             raise ValueError(f"Room {self.name} must define at least one port")
@@ -128,7 +129,8 @@ class RoomTemplate:
 
         for port_index, port in enumerate(self.ports):
             px, py = port.pos
-            dx, dy = port.direction
+            direction = port.direction
+            dx, dy = direction.dx, direction.dy
 
             if not port.widths:
                 raise ValueError(f"Room {self.name} port {port_index} must allow at least one width")
@@ -199,8 +201,8 @@ class RoomTemplate:
             rotated_ports = []
             for port in self.ports:
                 rp_x, rp_y = rotate_point(port.pos[0], port.pos[1], width, height, rotation)
-                rd_x, rd_y = rotate_direction(port.direction[0], port.direction[1], rotation)
-                rotated_ports.append(((rp_x, rp_y), (rd_x, rd_y)))
+                rotated_direction = rotate_direction(port.direction, rotation)
+                rotated_ports.append(((rp_x, rp_y), rotated_direction))
 
             ref_offset_x = None
             ref_offset_y = None
@@ -217,11 +219,11 @@ class RoomTemplate:
                 shift_y = offset_y - rp_y
                 if not math.isclose(shift_x, round(shift_x), abs_tol=eps):
                     raise ValueError(
-                        f"Room {self.name} rotation {rotation} port cannot align to macro-grid with integer X shift"
+                        f"Room {self.name} rotation {rotation.degrees} port cannot align to macro-grid with integer X shift"
                     )
                 if not math.isclose(shift_y, round(shift_y), abs_tol=eps):
                     raise ValueError(
-                        f"Room {self.name} rotation {rotation} port cannot align to macro-grid with integer Y shift"
+                        f"Room {self.name} rotation {rotation.degrees} port cannot align to macro-grid with integer Y shift"
                     )
 
                 value_x = rp_x - offset_x
@@ -237,11 +239,11 @@ class RoomTemplate:
                     normalized_y = delta_y / float(MACRO_GRID_SIZE)
                     if not math.isclose(normalized_x, round(normalized_x), abs_tol=eps):
                         raise ValueError(
-                            f"Room {self.name} rotation {rotation} ports misaligned on macro-grid (x)"
+                            f"Room {self.name} rotation {rotation.degrees} ports misaligned on macro-grid (x)"
                         )
                     if not math.isclose(normalized_y, round(normalized_y), abs_tol=eps):
                         raise ValueError(
-                            f"Room {self.name} rotation {rotation} ports misaligned on macro-grid (y)"
+                            f"Room {self.name} rotation {rotation.degrees} ports misaligned on macro-grid (y)"
                         )
 
 @dataclass(frozen=True)
@@ -250,7 +252,7 @@ class WorldPort:
 
     pos: Tuple[float, float]
     tiles: Tuple[TilePos, TilePos]
-    direction: Tuple[int, int]
+    direction: Direction
     widths: FrozenSet[int]
 
 
@@ -284,12 +286,17 @@ class PlacedRoom:
     template: RoomTemplate
     x: int
     y: int
-    rotation: int
+    rotation: Rotation
     component_id: int = -1
     connected_port_indices: set[int] = field(default_factory=set)
 
     def __post_init__(self) -> None:
-        if self.rotation not in VALID_ROTATIONS:
+        if not isinstance(self.rotation, Rotation):
+            try:
+                self.rotation = Rotation.from_degrees(int(self.rotation))
+            except ValueError as exc:
+                raise ValueError(f"Unsupported rotation {self.rotation}") from exc
+        elif self.rotation not in VALID_ROTATIONS:
             raise ValueError(f"Unsupported rotation {self.rotation}")
 
     def get_available_port_indices(self) -> List[int]:
@@ -298,13 +305,13 @@ class PlacedRoom:
 
     @property
     def width(self) -> int:
-        if self.rotation in (0, 180):
+        if self.rotation in (Rotation.DEG_0, Rotation.DEG_180):
             return self.template.size[0]
         return self.template.size[1]
 
     @property
     def height(self) -> int:
-        if self.rotation in (0, 180):
+        if self.rotation in (Rotation.DEG_0, Rotation.DEG_180):
             return self.template.size[1]
         return self.template.size[0]
 
@@ -319,7 +326,7 @@ class PlacedRoom:
 
         for port in self.template.ports:
             rp_x, rp_y = rotate_point(port.pos[0], port.pos[1], w, h, self.rotation)
-            rd_x, rd_y = rotate_direction(port.direction[0], port.direction[1], self.rotation)
+            rotated_direction = rotate_direction(port.direction, self.rotation)
 
             world_x = self.x + rp_x
             world_y = self.y + rp_y
@@ -329,7 +336,7 @@ class PlacedRoom:
                 WorldPort(
                     pos=(world_x, world_y),
                     tiles=tiles,
-                    direction=(rd_x, rd_y),
+                    direction=rotated_direction,
                     widths=port.widths,
                 )
             )
