@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Tuple, Union
@@ -33,6 +34,10 @@ class Rotation(Enum):
     @classmethod
     def all(cls) -> Tuple[Rotation, ...]:
         return tuple(cls)
+
+    @classmethod
+    def random(cls) -> Rotation:
+        return random.choice(VALID_ROTATIONS)
 
 VALID_ROTATIONS = tuple(Rotation)
 

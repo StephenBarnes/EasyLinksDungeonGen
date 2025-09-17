@@ -196,9 +196,6 @@ class DungeonGenerator:
     def _rooms_share_component(self, room_a_idx: int, room_b_idx: int) -> bool:
         return self._normalize_room_component(room_a_idx) == self._normalize_room_component(room_b_idx)
 
-    def _random_rotation(self) -> Rotation:
-        return random.choice(VALID_ROTATIONS)
-
     def _random_macro_grid_point(self) -> Tuple[int, int]:
         max_macro_x = (self.width // MACRO_GRID_SIZE) - 1
         max_macro_y = (self.height // MACRO_GRID_SIZE) - 1
@@ -266,7 +263,7 @@ class DungeonGenerator:
     ) -> Rotation:
         preferred_dir = template.preferred_center_facing_dir
         if placement_category != "edge" or preferred_dir is None:
-            return self._random_rotation()
+            return Rotation.random()
 
         inward_directions: List[Direction] = []
         if side_proximities.get("left") == "close":
@@ -279,7 +276,7 @@ class DungeonGenerator:
             inward_directions.append(Direction.NORTH)
 
         if not inward_directions:
-            return self._random_rotation()
+            return Rotation.random()
 
         rotation_weights: List[float] = []
         for rotation in VALID_ROTATIONS:
@@ -289,7 +286,7 @@ class DungeonGenerator:
 
         if any(weight > 0 for weight in rotation_weights):
             return random.choices(VALID_ROTATIONS, weights=rotation_weights)[0]
-        return self._random_rotation()
+        return Rotation.random()
 
     def _sample_num_direct_links(self) -> int:
         """Sample n using the configured probability distribution."""
@@ -334,7 +331,7 @@ class DungeonGenerator:
                 template = random.choices(
                     self.standalone_room_templates, weights=[rt.direct_weight for rt in self.standalone_room_templates]
                 )[0]
-                rotation = self._random_rotation()
+                rotation = Rotation.random()
                 temp_room = PlacedRoom(template, 0, 0, rotation)
                 rot_ports = temp_room.get_world_ports()
                 # Find ports facing opposite direction
