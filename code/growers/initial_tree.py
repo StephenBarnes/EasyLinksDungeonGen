@@ -48,6 +48,10 @@ class InitialTreeHelper:
         self.layout = context.layout
         self.room_templates_by_kind = context.room_templates_by_kind
         self._standalone_templates = list(context.get_room_templates(RoomKind.STANDALONE))
+        self._direct_linked_templates = list(context.get_room_templates(RoomKind.DIRECT_LINKED))
+        if not self._direct_linked_templates:
+            # Fall back to standalone templates if none are explicitly marked for direct links yet.
+            self._direct_linked_templates = list(self._standalone_templates)
         if not self._standalone_templates:
             raise ValueError("Initial tree growth requires standalone room templates")
 
@@ -171,7 +175,7 @@ class InitialTreeHelper:
         while failures < max_fail_windows:
             macro_x, macro_y = self._random_macro_grid_point()
             placement_category, side_proximities = self._describe_macro_position(macro_x, macro_y)
-            template = self._pick_root_template(placement_category)
+            template = self._pick_root_template(placement_category, first_root=True)
             rotation = self._select_root_rotation(template, placement_category, side_proximities)
             candidate_room = self._build_root_room_candidate(template, rotation, macro_x, macro_y)
             if self.layout.is_valid_placement(candidate_room):
@@ -185,13 +189,23 @@ class InitialTreeHelper:
 
         return None
 
-    def _pick_root_template(self, placement_category: str) -> RoomTemplate:
+    def _pick_root_template(self, placement_category: str, *, first_root: bool = False) -> RoomTemplate:
         if placement_category == "middle":
-            weights = [rt.root_weight_middle for rt in self._standalone_templates]
+            base_weights = [rt.root_weight_middle for rt in self._standalone_templates]
         elif placement_category == "edge":
-            weights = [rt.root_weight_edge for rt in self._standalone_templates]
+            base_weights = [rt.root_weight_edge for rt in self._standalone_templates]
         else:
-            weights = [rt.root_weight_intermediate for rt in self._standalone_templates]
+            base_weights = [rt.root_weight_intermediate for rt in self._standalone_templates]
+
+        if first_root:
+            weights = [rt.first_root_weight * weight for rt, weight in zip(self._standalone_templates, base_weights)]
+            if not any(weight > 0 for weight in weights):
+                weights = [rt.first_root_weight for rt in self._standalone_templates]
+            if not any(weight > 0 for weight in weights):
+                weights = [1.0 for _ in self._standalone_templates]
+            return random.choices(self._standalone_templates, weights=weights)[0]
+
+        weights = base_weights
 
         if not any(weight > 0 for weight in weights):
             weights = [1.0 for _ in self._standalone_templates]
@@ -466,9 +480,7 @@ class InitialTreeHelper:
         anchor_world_ports = anchor_room.get_world_ports()
         available_anchor_indices = anchor_room.get_available_port_indices()
         random.shuffle(available_anchor_indices)
-        standalone_templates: Sequence[RoomTemplate] = self.room_templates_by_kind.get(
-            RoomKind.STANDALONE, ()
-        )
+        direct_templates: Sequence[RoomTemplate] = self._direct_linked_templates
 
         for anchor_idx in available_anchor_indices:
             awp = anchor_world_ports[anchor_idx]
@@ -478,8 +490,8 @@ class InitialTreeHelper:
             target_port_pos = (ax + dx, ay + dy)
             for _ in range(self.config.max_connected_placement_attempts):
                 template = random.choices(
-                    standalone_templates,
-                    weights=[rt.direct_weight for rt in standalone_templates],
+                    direct_templates,
+                    weights=[rt.direct_linked_weight for rt in direct_templates],
                 )[0]
                 if len(anchor_room.template.ports) == 1 and len(template.ports) == 1:
                     continue

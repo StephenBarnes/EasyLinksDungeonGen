@@ -22,11 +22,12 @@ from geometry import (
 
 class RoomKind(Enum):
     """Specifies the ways that a given RoomTemplate can be used."""
-    STANDALONE = 0 # Created by step 1, either placed as a root or created directly linked to existing room.
+    STANDALONE = 0 # Created by step 1 when placing root rooms.
     T_JUNCTION = 1 # Connects 2 corridors/rooms in line with each other, plus a third corridor/room perpendicular.
     BEND = 2 # Connects to 2 passages/rooms at right angles.
     THROUGH = 3 # Used to break up long passages; connects to 2 passages on opposite sides.
     FOUR_WAY = 4 # Connects to 4 passages or room ports.
+    DIRECT_LINKED = 5 # Created by step 1 when attaching rooms directly to the initial root tree.
 
 
 @dataclass
@@ -86,7 +87,8 @@ class RoomTemplate:
     root_weight_middle: float = 1.0  # Weight when placing room near the dungeon center.
     root_weight_edge: float = 1.0  # Weight when placing room near the dungeon outskirts.
     root_weight_intermediate: float = 1.0  # Weight when placement is neither central nor edge.
-    direct_weight: float = 1.0  # Weight for random choice when creating direct-linked rooms.
+    first_root_weight: float = 1.0  # Weight for the very first root room.
+    direct_linked_weight: float = 1.0  # Weight when selecting a direct-linked room during initial growth.
     t_junction_weight: float = 1.0  # Weight when selecting as a T-junction special room.
     bend_weight: float = 1.0  # Weight when selecting as a bend special room.
     four_way_weight: float = 1.0  # Weight when selecting as a 4-way intersection.
@@ -105,6 +107,11 @@ class RoomTemplate:
         self.size = (int(width), int(height))
         self.macro_grid_size = int(self.macro_grid_size)
         self.kinds = frozenset(self.kinds)
+        self.root_weight_middle = float(self.root_weight_middle)
+        self.root_weight_edge = float(self.root_weight_edge)
+        self.root_weight_intermediate = float(self.root_weight_intermediate)
+        self.first_root_weight = float(self.first_root_weight)
+        self.direct_linked_weight = float(self.direct_linked_weight)
         self.t_junction_weight = float(self.t_junction_weight)
         self.bend_weight = float(self.bend_weight)
         self.four_way_weight = float(self.four_way_weight)
@@ -126,6 +133,10 @@ class RoomTemplate:
         if not self.kinds:
             raise ValueError(f"Room {self.name} must specify at least one RoomKind")
 
+        if self.first_root_weight < 0:
+            raise ValueError(f"Room {self.name} first-root weight must be non-negative")
+        if self.direct_linked_weight < 0:
+            raise ValueError(f"Room {self.name} direct-linked weight must be non-negative")
         if self.t_junction_weight < 0:
             raise ValueError(f"Room {self.name} T-junction weight must be non-negative")
         if self.bend_weight < 0:
@@ -140,6 +151,8 @@ class RoomTemplate:
 
     def weight_for_kind(self, kind: RoomKind) -> float:
         """Return the selection weight for the given special-room kind."""
+        if kind is RoomKind.DIRECT_LINKED:
+            return self.direct_linked_weight
         if kind is RoomKind.T_JUNCTION:
             return self.t_junction_weight
         if kind is RoomKind.BEND:

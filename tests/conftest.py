@@ -28,11 +28,12 @@ def standalone_template() -> RoomTemplate:
             PortTemplate(pos=(0.0, 3.5), direction=Direction.WEST, widths=frozenset((2, 4))),
             PortTemplate(pos=(7.0, 3.5), direction=Direction.EAST, widths=frozenset((2, 4))),
         ],
-        kinds=frozenset((RoomKind.STANDALONE,)),
+        kinds=frozenset((RoomKind.STANDALONE, RoomKind.DIRECT_LINKED)),
         root_weight_middle=1.5,
         root_weight_edge=0.4,
         root_weight_intermediate=1.0,
-        direct_weight=1.5,
+        first_root_weight=1.0,
+        direct_linked_weight=1.5,
     )
 
 

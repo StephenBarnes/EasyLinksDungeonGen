@@ -17,7 +17,10 @@ from models import RoomKind
 @pytest.fixture
 def tree_context(dungeon_config: DungeonConfig, dungeon_layout: DungeonLayout, standalone_template):
     room_templates = [standalone_template]
-    room_templates_by_kind = {RoomKind.STANDALONE: room_templates}
+    room_templates_by_kind = {
+        RoomKind.STANDALONE: room_templates,
+        RoomKind.DIRECT_LINKED: room_templates,
+    }
     return GrowerContext(
         config=dungeon_config,
         layout=dungeon_layout,
@@ -152,7 +155,10 @@ def test_run_initial_tree_spawns_corridor_when_possible(standalone_template):
             config=config,
             layout=layout,
             room_templates=room_templates,
-            room_templates_by_kind={RoomKind.STANDALONE: room_templates},
+            room_templates_by_kind={
+                RoomKind.STANDALONE: room_templates,
+                RoomKind.DIRECT_LINKED: room_templates,
+            },
         )
 
         run_initial_tree_grower(context)

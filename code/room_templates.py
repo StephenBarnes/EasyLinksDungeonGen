@@ -16,8 +16,9 @@ prototype_room_templates = [
 		root_weight_middle=1.5,
 		root_weight_edge=0.4,
 		root_weight_intermediate=1.0,
-		direct_weight=1.5,
-		kinds=frozenset((RoomKind.STANDALONE, RoomKind.FOUR_WAY, RoomKind.T_JUNCTION, RoomKind.BEND, RoomKind.THROUGH)),
+		first_root_weight=1.0,
+		direct_linked_weight=1.5,
+		kinds=frozenset((RoomKind.STANDALONE, RoomKind.DIRECT_LINKED, RoomKind.FOUR_WAY, RoomKind.T_JUNCTION, RoomKind.BEND, RoomKind.THROUGH)),
 	),
 	RoomTemplate(
 		name="room_8x10_5doors",
@@ -32,7 +33,9 @@ prototype_room_templates = [
 		root_weight_middle=2.0,
 		root_weight_edge=0.5,
 		root_weight_intermediate=1.2,
-		kinds=frozenset((RoomKind.STANDALONE,)),
+		first_root_weight=1.0,
+		direct_linked_weight=1.0,
+		kinds=frozenset((RoomKind.STANDALONE, RoomKind.DIRECT_LINKED)),
 	),
 	RoomTemplate(
 		name="room_8x6_2doors",
@@ -41,8 +44,10 @@ prototype_room_templates = [
 			PortTemplate(pos=(0, 2.5), direction=Direction.WEST, widths=frozenset((2, 4))),
 			PortTemplate(pos=(7, 2.5), direction=Direction.EAST, widths=frozenset((2, 4))),
 		],
+		first_root_weight=1.0,
+		direct_linked_weight=1.0,
 		through_weight=1.2,
-		kinds=frozenset((RoomKind.STANDALONE, RoomKind.THROUGH)),
+		kinds=frozenset((RoomKind.STANDALONE, RoomKind.DIRECT_LINKED, RoomKind.THROUGH)),
 	),
 	RoomTemplate(
 		name="room_6x6_90deg",
@@ -54,7 +59,9 @@ prototype_room_templates = [
 		root_weight_middle=0.7,
 		root_weight_edge=0.9,
 		root_weight_intermediate=1.1,
-		kinds=frozenset((RoomKind.STANDALONE, RoomKind.BEND)),
+		first_root_weight=1.0,
+		direct_linked_weight=1.0,
+		kinds=frozenset((RoomKind.STANDALONE, RoomKind.DIRECT_LINKED, RoomKind.BEND)),
 	),
 	RoomTemplate(
 		name="room_6x4_deadend",
@@ -65,8 +72,10 @@ prototype_room_templates = [
 		root_weight_middle=0.1,
 		root_weight_edge=2,
 		root_weight_intermediate=0.3,
+		first_root_weight=1.0,
+		direct_linked_weight=1.0,
 		preferred_center_facing_dir=Direction.NORTH,
-		kinds=frozenset((RoomKind.STANDALONE,)),
+		kinds=frozenset((RoomKind.STANDALONE, RoomKind.DIRECT_LINKED)),
 	),
 
 	# Special room templates for 90-degree bends.
