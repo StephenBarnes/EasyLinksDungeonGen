@@ -14,6 +14,8 @@ import statistics
 import time
 from typing import Dict, List
 
+import networkx as nx
+
 from dungeon_config import DungeonConfig, CorridorLengthDistribution
 from dungeon_generator import DungeonGenerator
 from room_templates import prototype_room_templates
@@ -39,6 +41,11 @@ DEFAULT_CONFIG_KWARGS = dict(
     collect_metrics=True,
 )
 
+ROOM_COMPLETION_THRESHOLD_RATIO = 0.8
+AREA_COVERAGE_THRESHOLD = 0.2
+CYCLE_COUNT_THRESHOLD = 1
+CYCLE_LENGTH_THRESHOLD = 5
+
 
 def build_config(seed: int) -> DungeonConfig:
     return DungeonConfig(random_seed=seed, **DEFAULT_CONFIG_KWARGS) # type: ignore
@@ -52,6 +59,14 @@ class GenerationRunResult:
     total_corridors: int
     diversity_score: float
     gini_coefficient: float
+    room_target: int
+    room_acceptance_threshold: int
+    meets_room_threshold: bool
+    map_area: int
+    bounding_box_area: int
+    bounding_box_area_fraction: float
+    cycle_count: int
+    cycle_lengths: List[int]
     template_counts: Counter[str]
     grower_metrics: Dict[str, Dict[str, float | int]]
 
@@ -91,6 +106,65 @@ def percentile(values: List[float], pct: float) -> float:
     return lower_value + (upper_value - lower_value) * fraction
 
 
+def describe_distribution(values: List[float]) -> str:
+    if not values:
+        return "mean nan, median nan, p10 nan, p90 nan"
+    mean_val = statistics.mean(values)
+    median_val = statistics.median(values)
+    p10 = percentile(values, 10.0)
+    p90 = percentile(values, 90.0)
+    return (
+        f"mean {mean_val:.3f}, median {median_val:.3f}, p10 {p10:.3f}, p90 {p90:.3f}"
+    )
+
+
+def fraction_at_least(values: List[float], threshold: float) -> float:
+    if not values:
+        return float("nan")
+    return sum(1 for value in values if value >= threshold) / len(values)
+
+
+def format_fraction(value: float) -> str:
+    if math.isnan(value):
+        return "nan"
+    return f"{value:.1%}"
+
+
+def bounding_box_area(layout) -> tuple[int, int, float]:
+    if not layout.placed_rooms:
+        total_area = layout.config.width * layout.config.height
+        return 0, total_area, 0.0
+
+    min_x = min(room.x for room in layout.placed_rooms)
+    max_x = max(room.x + room.width for room in layout.placed_rooms)
+    min_y = min(room.y for room in layout.placed_rooms)
+    max_y = max(room.y + room.height for room in layout.placed_rooms)
+
+    width = max(0, max_x - min_x)
+    height = max(0, max_y - min_y)
+    area = width * height
+    total_area = layout.config.width * layout.config.height
+    fraction = area / total_area if total_area > 0 else 0.0
+    return area, total_area, fraction
+
+
+def build_room_graph(layout) -> nx.Graph:
+    graph = nx.Graph()
+    for room in layout.placed_rooms:
+        graph.add_node(room.index)
+
+    for corridor in layout.corridors:
+        room_a = corridor.room_a_index
+        room_b = corridor.room_b_index
+        if room_a is not None and room_b is not None:
+            graph.add_edge(room_a, room_b)
+
+    for room_a, room_b in layout.room_room_links:
+        graph.add_edge(room_a, room_b)
+
+    return graph
+
+
 def run_single_generation(seed: int) -> GenerationRunResult:
     """Run one dungeon generation with the provided seed and collect metrics."""
     config = build_config(seed)
@@ -105,6 +179,17 @@ def run_single_generation(seed: int) -> GenerationRunResult:
 
     layout = generator.layout
     total_rooms = len(layout.placed_rooms)
+
+    room_target = layout.config.num_rooms_to_place
+    room_threshold = math.floor(room_target * ROOM_COMPLETION_THRESHOLD_RATIO)
+    meets_room_threshold = total_rooms >= room_threshold
+
+    bbox_area, map_area, bbox_fraction = bounding_box_area(layout)
+
+    graph = build_room_graph(layout)
+    basis = nx.cycle_basis(graph)
+    cycle_lengths = [len(cycle) for cycle in basis]
+    cycle_count = len(cycle_lengths)
 
     template_counts: Counter[str] = Counter(
         room.template.name for room in layout.placed_rooms
@@ -121,6 +206,14 @@ def run_single_generation(seed: int) -> GenerationRunResult:
         total_corridors=len(layout.corridors),
         diversity_score=diversity,
         gini_coefficient=gini,
+        room_target=room_target,
+        room_acceptance_threshold=room_threshold,
+        meets_room_threshold=meets_room_threshold,
+        map_area=map_area,
+        bounding_box_area=bbox_area,
+        bounding_box_area_fraction=bbox_fraction,
+        cycle_count=cycle_count,
+        cycle_lengths=cycle_lengths,
         template_counts=template_counts,
         grower_metrics=grower_metrics,
     )
@@ -229,13 +322,41 @@ def main() -> None:
     worst_index = durations.index(worst_duration)
     worst_seed = run_seeds[worst_index]
 
+    rooms_values = [float(result.total_rooms) for result in results]
+    room_target = results[0].room_target
+    room_threshold = results[0].room_acceptance_threshold
+    bounding_fractions = [result.bounding_box_area_fraction for result in results]
+    cycle_counts = [float(result.cycle_count) for result in results]
+    cycle_lengths_all = [float(length) for result in results for length in result.cycle_lengths]
+
     for idx, result in enumerate(results, start=1):
+        run_status = "ok" if result.meets_room_threshold else "low"
+        cycle_lengths_display = (
+            ", ".join(str(length) for length in result.cycle_lengths)
+            if result.cycle_lengths
+            else "-"
+        )
         print(
-            "Run {idx:02d}: {time} (seed {seed}) | diversity {diversity:.3f}".format(
+            "Run {idx:02d}: {time} (seed {seed}) | rooms {rooms}/{target}"
+            " (>= {threshold}? {status}) | diversity {diversity:.3f}".format(
                 idx=idx,
                 time=format_seconds(result.duration),
                 seed=result.seed,
+                rooms=result.total_rooms,
+                target=room_target,
+                threshold=room_threshold,
+                status=run_status,
                 diversity=result.diversity_score,
+            )
+        )
+        print(
+            "  bbox {fraction:.3f} of map (area {area}/{map_area}),"
+            " cycles {cycles} [{lengths}]".format(
+                fraction=result.bounding_box_area_fraction,
+                area=result.bounding_box_area,
+                map_area=result.map_area,
+                cycles=result.cycle_count,
+                lengths=cycle_lengths_display,
             )
         )
 
@@ -272,6 +393,50 @@ def main() -> None:
             threshold=args.min_diversity,
         )
     )
+
+    rooms_success = fraction_at_least(rooms_values, float(room_threshold))
+    area_success = fraction_at_least(bounding_fractions, AREA_COVERAGE_THRESHOLD)
+    cycle_success = fraction_at_least(cycle_counts, float(CYCLE_COUNT_THRESHOLD))
+    cycle_length_success = fraction_at_least(
+        cycle_lengths_all, float(CYCLE_LENGTH_THRESHOLD)
+    )
+
+    print(
+        "Rooms placed: {distribution}, success rate {success} for"
+        " threshold >= {threshold} (target {target}).".format(
+            distribution=describe_distribution(rooms_values),
+            success=format_fraction(rooms_success),
+            threshold=room_threshold,
+            target=room_target,
+        )
+    )
+    print(
+        "Bounding coverage: {distribution}, success rate {success} for"
+        " threshold {threshold}.".format(
+            distribution=describe_distribution(bounding_fractions),
+            success=format_fraction(area_success),
+            threshold=f"{AREA_COVERAGE_THRESHOLD:.0%}",
+        )
+    )
+    print(
+        "Cycle count: {distribution}, success rate {success} for"
+        " threshold >= {threshold}.".format(
+            distribution=describe_distribution(cycle_counts),
+            success=format_fraction(cycle_success),
+            threshold=CYCLE_COUNT_THRESHOLD,
+        )
+    )
+    if cycle_lengths_all:
+        print(
+            "Cycle length: {distribution}, success rate {success} for"
+            " threshold >= {threshold}.".format(
+                distribution=describe_distribution(cycle_lengths_all),
+                success=format_fraction(cycle_length_success),
+                threshold=CYCLE_LENGTH_THRESHOLD,
+            )
+        )
+    else:
+        print("Cycle length: no cycles observed across runs.")
 
     if total_rooms > 0:
         print()
