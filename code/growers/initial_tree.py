@@ -177,12 +177,14 @@ class InitialTreeHelper:
         failures = 0
 
         while failures < max_fail_windows:
-            macro_x, macro_y = self._random_macro_grid_point()
-            placement_category, side_proximities = self._describe_macro_position(macro_x, macro_y)
+            macro_x, macro_y = self._random_macro_grid_point(first_root=True)
+            placement_category, side_proximities = self._describe_macro_position(
+                macro_x, macro_y, first_root=True
+            )
             template = self._pick_root_template(placement_category, first_root=True)
             rotation = self._select_root_rotation(template, placement_category, side_proximities)
             candidate_room = self._build_root_room_candidate(template, rotation, macro_x, macro_y)
-            if self.layout.is_valid_placement(candidate_room):
+            if self._is_center_within_first_root_region(candidate_room) and self.layout.is_valid_placement(candidate_room):
                 self.layout.register_room(candidate_room)
                 return candidate_room
 
@@ -374,14 +376,35 @@ class InitialTreeHelper:
                 tiles[TilePos(tx, ty)] = placeholder
         return tiles
 
-    def _random_macro_grid_point(self) -> Tuple[int, int]:
+    def _random_macro_grid_point(self, *, first_root: bool = False) -> Tuple[int, int]:
         max_macro_x = (self.config.width // self.config.macro_grid_size) - 1
         max_macro_y = (self.config.height // self.config.macro_grid_size) - 1
         if max_macro_x <= 1 or max_macro_y <= 1:
             raise ValueError("Grid too small to place rooms with macro-grid alignment")
 
-        macro_x = random.randint(1, max_macro_x - 1) * self.config.macro_grid_size
-        macro_y = random.randint(1, max_macro_y - 1) * self.config.macro_grid_size
+        def _allowed_indices(max_macro: int, span: int, dimension: int) -> List[int]:
+            indices = list(range(1, max_macro))
+            if not first_root:
+                return indices
+
+            fraction = self.config.first_root_center_fraction
+            allowed_span = dimension * fraction
+            margin = (dimension - allowed_span) / 2.0
+            min_value = margin
+            max_value = dimension - margin
+
+            filtered = [
+                idx
+                for idx in indices
+                if min_value <= idx * span <= max_value
+            ]
+            return filtered if filtered else indices
+
+        macro_indices_x = _allowed_indices(max_macro_x, self.config.macro_grid_size, self.config.width)
+        macro_indices_y = _allowed_indices(max_macro_y, self.config.macro_grid_size, self.config.height)
+
+        macro_x = random.choice(macro_indices_x) * self.config.macro_grid_size
+        macro_y = random.choice(macro_indices_y) * self.config.macro_grid_size
         return macro_x, macro_y
 
     def _build_root_room_candidate(
@@ -407,7 +430,7 @@ class InitialTreeHelper:
         return PlacedRoom(template, room_x, room_y, rotation)
 
     @staticmethod
-    def _categorize_side_distance(distance: float, span: int) -> str:
+    def _categorize_side_distance(distance: float, span: float) -> str:
         if span <= 0:
             return "far"
         ratio = max(0.0, min(distance / float(span), 1.0))
@@ -417,12 +440,34 @@ class InitialTreeHelper:
             return "far"
         return "intermediate"
 
-    def _describe_macro_position(self, macro_x: int, macro_y: int) -> Tuple[str, Dict[str, str]]:
+    def _describe_macro_position(
+        self,
+        macro_x: int,
+        macro_y: int,
+        *,
+        first_root: bool = False,
+    ) -> Tuple[str, Dict[str, str]]:
+        if first_root:
+            min_x, max_x, min_y, max_y = self._first_root_center_bounds()
+            span_x = max_x - min_x
+            span_y = max_y - min_y
+            left_distance = max(0.0, macro_x - min_x)
+            right_distance = max(0.0, max_x - macro_x)
+            top_distance = max(0.0, macro_y - min_y)
+            bottom_distance = max(0.0, max_y - macro_y)
+        else:
+            span_x = float(self.config.width)
+            span_y = float(self.config.height)
+            left_distance = float(macro_x)
+            right_distance = float(self.config.width - macro_x)
+            top_distance = float(macro_y)
+            bottom_distance = float(self.config.height - macro_y)
+
         side_proximities = {
-            "left": self._categorize_side_distance(macro_x, self.config.width),
-            "right": self._categorize_side_distance(self.config.width - macro_x, self.config.width),
-            "top": self._categorize_side_distance(macro_y, self.config.height),
-            "bottom": self._categorize_side_distance(self.config.height - macro_y, self.config.height),
+            "left": self._categorize_side_distance(left_distance, span_x),
+            "right": self._categorize_side_distance(right_distance, span_x),
+            "top": self._categorize_side_distance(top_distance, span_y),
+            "bottom": self._categorize_side_distance(bottom_distance, span_y),
         }
 
         if any(value == "close" for value in side_proximities.values()):
@@ -433,6 +478,24 @@ class InitialTreeHelper:
             proximity = "intermediate"
 
         return proximity, side_proximities
+
+    def _first_root_center_bounds(self) -> Tuple[float, float, float, float]:
+        fraction = self.config.first_root_center_fraction
+        width = float(self.config.width)
+        height = float(self.config.height)
+        allowed_width = width * fraction
+        allowed_height = height * fraction
+        min_x = (width - allowed_width) / 2.0
+        max_x = min_x + allowed_width
+        min_y = (height - allowed_height) / 2.0
+        max_y = min_y + allowed_height
+        return min_x, max_x, min_y, max_y
+
+    def _is_center_within_first_root_region(self, room: PlacedRoom) -> bool:
+        min_x, max_x, min_y, max_y = self._first_root_center_bounds()
+        center_x = room.x + room.width / 2.0
+        center_y = room.y + room.height / 2.0
+        return (min_x <= center_x <= max_x) and (min_y <= center_y <= max_y)
 
     def _select_root_rotation(
         self,

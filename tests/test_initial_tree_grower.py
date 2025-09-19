@@ -118,6 +118,26 @@ def test_run_initial_tree_creates_connected_layout(tree_context: GrowerContext):
         assert distance is not None
 
 
+def test_first_root_center_within_fraction(tree_context: GrowerContext):
+    random.seed(2468)
+    run_initial_tree_grower(tree_context)
+
+    config = tree_context.config
+    root_room = tree_context.layout.placed_rooms[0]
+    center_x = root_room.x + root_room.width / 2.0
+    center_y = root_room.y + root_room.height / 2.0
+
+    allowed_width = config.width * config.first_root_center_fraction
+    allowed_height = config.height * config.first_root_center_fraction
+    min_x = (config.width - allowed_width) / 2.0
+    max_x = min_x + allowed_width
+    min_y = (config.height - allowed_height) / 2.0
+    max_y = min_y + allowed_height
+
+    assert min_x <= center_x <= max_x
+    assert min_y <= center_y <= max_y
+
+
 def test_corridor_length_distribution_within_bounds(tree_context: GrowerContext):
     dist = tree_context.config.initial_corridor_length
     for _ in range(20):

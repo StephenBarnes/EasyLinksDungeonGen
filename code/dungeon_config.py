@@ -79,6 +79,7 @@ class DungeonConfig:
     max_consecutive_limit_failures: int = 5
     bent_room_to_corridor_max_room_distance: int = 8
     bent_room_to_corridor_max_branch_distance: int | None = None
+    first_root_center_fraction: float = 0.3
     _door_macro_alignment_offsets: Mapping[Direction, tuple[float, float]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -118,6 +119,12 @@ class DungeonConfig:
         ):
             raise ValueError(
                 "DungeonConfig bent_room_to_corridor_max_branch_distance must be positive or None"
+            )
+
+        self.first_root_center_fraction = float(self.first_root_center_fraction)
+        if not (0.0 < self.first_root_center_fraction <= 1.0):
+            raise ValueError(
+                "DungeonConfig first_root_center_fraction must be within (0, 1]"
             )
 
         self.room_templates = tuple(self.room_templates)

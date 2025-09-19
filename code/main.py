@@ -29,6 +29,7 @@ def main() -> None:
                 max_length=25,
                 median_length=10,
             ),
+            first_root_center_fraction=.3,
             random_seed=None,
         )
 
