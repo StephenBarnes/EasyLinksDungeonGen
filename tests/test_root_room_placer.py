@@ -71,3 +71,20 @@ def test_build_root_room_candidate_aligns_using_macro_offsets(root_room_placer, 
 
     assert candidate.x % root_room_placer.config.macro_grid_size == 0
     assert candidate.y % root_room_placer.config.macro_grid_size == 0
+
+
+def test_place_rooms_creates_single_component(root_room_placer):
+    random.seed(12345)
+    root_room_placer.place_rooms()
+
+    component_sizes = root_room_placer.layout.get_component_sizes()
+    assert len(component_sizes) == 1
+    assert sum(component_sizes.values()) == len(root_room_placer.layout.placed_rooms)
+    assert len(root_room_placer.layout.placed_rooms) >= 1
+
+
+def test_corridor_length_distribution_within_bounds(root_room_placer):
+    dist = root_room_placer.config.initial_corridor_length_distribution
+    for _ in range(20):
+        value = dist.sample()
+        assert dist.min_length <= value <= dist.max_length
