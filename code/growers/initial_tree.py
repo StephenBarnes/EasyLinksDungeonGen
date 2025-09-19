@@ -168,7 +168,7 @@ class InitialTreeHelper:
         return self._rooms_created
 
     # ------------------------------------------------------------------
-    # Internal helpers (mostly adapted from the original RootRoomPlacer)
+    # Internal helpers
     # ------------------------------------------------------------------
     def _place_initial_root(self) -> Optional[PlacedRoom]:
         max_attempts = self.config.max_connected_placement_attempts

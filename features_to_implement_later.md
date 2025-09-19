@@ -1,5 +1,3 @@
-- Place first root room in a smaller rectangle, say only in the central 30% of the map along each dimension. Add a DungeonConfig field for this 30% value. Also adjust the _categorize_side_distance function in initial tree grower to adjust for the smaller size.
-
 - Instead of setting direction preference when creating each RoomTemplate, rather automatically infer it by checking which sides have door-ports on them. Eg the 90-degree bend templates should avoid having either door port facing map edge.
 
 - Add a re-centering step? If dungeon is on one side of the map, move it closer to the middle, then try adding more rooms.
