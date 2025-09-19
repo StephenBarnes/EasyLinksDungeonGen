@@ -332,13 +332,6 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
         before = len(context.layout.corridors)
 
         if isinstance(plan, DirectRoomConnectionPlan):
-            component_id = context.layout.merge_components(
-                context.layout.normalize_room_component(candidate.room_a_idx),
-                context.layout.normalize_room_component(candidate.room_b_idx),
-            )
-            context.layout.set_room_component(candidate.room_a_idx, component_id)
-            context.layout.set_room_component(candidate.room_b_idx, component_id)
-
             corridor = Corridor(
                 room_a_index=candidate.room_a_idx,
                 port_a_index=candidate.port_a_idx,
@@ -346,25 +339,15 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
                 port_b_index=candidate.port_b_idx,
                 width=plan.width,
                 geometry=plan.geometry,
-                component_id=component_id,
             )
-            context.layout.register_corridor(corridor, component_id)
+            context.layout.register_corridor(corridor)
             context.layout.placed_rooms[candidate.room_a_idx].connected_port_indices.add(candidate.port_a_idx)
             context.layout.placed_rooms[candidate.room_b_idx].connected_port_indices.add(candidate.port_b_idx)
         else:
-            component_id = context.layout.merge_components(
-                context.layout.normalize_room_component(candidate.room_a_idx),
-                context.layout.normalize_room_component(candidate.room_b_idx),
-                context.layout.normalize_corridor_component(plan.existing_corridor_idx),
-            )
-            context.layout.set_room_component(candidate.room_a_idx, component_id)
-            context.layout.set_room_component(candidate.room_b_idx, component_id)
-            context.layout.set_corridor_component(plan.existing_corridor_idx, component_id)
-
             context.invalidate_corridor_index(plan.existing_corridor_idx)
 
             junction_room_index = len(context.layout.placed_rooms)
-            context.layout.register_room(plan.junction_room, component_id)
+            context.layout.register_room(plan.junction_room)
 
             for key, source_room_idx, source_port_idx in (
                 ("new_a", candidate.room_a_idx, candidate.port_a_idx),
@@ -385,9 +368,8 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
                     port_b_index=junction_port_idx,
                     width=plan.width,
                     geometry=geometry_segment,
-                    component_id=component_id,
                 )
-                context.layout.register_corridor(corridor, component_id)
+                context.layout.register_corridor(corridor)
                 context.layout.placed_rooms[source_room_idx].connected_port_indices.add(source_port_idx)
                 context.layout.placed_rooms[junction_room_index].connected_port_indices.add(junction_port_idx)
 
@@ -406,7 +388,6 @@ class RoomToRoomApplier(GrowerApplier[RoomToRoomCandidate, RoomToRoomPlan]):
                 plan.existing_corridor_idx,
                 existing_assignments,
                 junction_room_index,
-                component_id,
             )
 
             context.layout.placed_rooms[candidate.room_a_idx].connected_port_indices.add(candidate.port_a_idx)

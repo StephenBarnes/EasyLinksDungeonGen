@@ -4,7 +4,7 @@
 
 - Add options to run growers only for specific rooms or corridors, to improve performance. When one step adds rooms or corridors, we only want subsequent growers to consider new connections involving those, not re-consider all of the possible options.
 
-- Use different intra-component connection thresholds for different growers.
+- Use different connection-distance thresholds for different growers.
 
 - Place all root rooms in a smaller rectangle, say only in the central 80% of the map along each direction. Add a DungeonConfig field for this 80% value. Also adjust the _categorize_side_distance function in root_room_placer.py to adjust for the smaller size.
 
@@ -17,18 +17,10 @@
 - Implement tests.
 
 - Implement integration testing to measure metrics over many random runs. This would allow testing the impact of tweaks and optimizations.
-	- Measure performance of the entire gen algorithm.
-	- Measure the distribution of the largest component's size at the end - we want it to be over say 80% of the whole dungeon.
+	- Measure performance of the entire gen algorithm. (Done.)
 	- Measure some metrics about dungeon structure, such as the number of cycles and distribution of their sizes.
 
-- Implement remaining growers, after refactoring growers.
-	- Add a grower that splits up overly long corridors, by placing a new room kind (marked as RoomKind.THROUGH) in the middle somewhere. Unclear where this should go in the ordering of steps.
-	- Add a grower that tries to randomly rotate rooms that currently have none of their door ports connected; check if the rotated version's dimensions still fit. Then try to apply other growers again and see if they create new edges.
-	- Consider adding a grower that looks for parallel corridors and creates a corridor between them, creating 2 T-junctions at the ends.
-- Implement the step 2 loop that repeatedly runs growers.
-- Implement step 3, deleting extra components and accepting or rejecting.
-
-- Add constraint: avoid making short loops. Meaning for instance if room 1 and room 2 are linked by a passage A, and room 1 is linked to another passage B, then we shouldn't create a passage C from room 2 to passage B. This would require maintaining a list of all passages connected to each room and all rooms connected to a given passage, and then checking the graph distance of things we want to connect that are in the same component, and then rejecting that connection if the graph distance is too short.
+- Add a grower that looks for parallel corridors and creates a corridor between them, creating 2 T-junctions at the ends.
 
 - Implement alternate algorithm where we first split the map in half. Then place a room in each half, so they can be directly linked. Then subsequent steps are each restricted to one half of the map. Could create more variety in layouts.
 
@@ -40,5 +32,3 @@
 Bugs to fix:
 
 - When placing special rooms (T-junctions, 4-ways, bends), we currently seem to be rejecting candidates that would directly touch an existing room, i.e. we are enforcing the min_room_separation. But the min_room_separation is only meant to apply in step 1, not to special rooms created by dungeon-growers.
-
-- Rarely, the generator fails to find a 4-way intersection room that fits in a 4x4 region, despite the fact that a 4x4 room template has been created that should fit. Probably a subtle off-by-one in the code that checks if it fits.

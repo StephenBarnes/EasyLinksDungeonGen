@@ -6,7 +6,6 @@ from collections import deque
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 import random
 
-from component_manager import ComponentManager
 from dungeon_config import DungeonConfig
 from models import Corridor, CorridorGeometry, PlacedRoom
 
@@ -24,7 +23,6 @@ class DungeonLayout:
         self.corridors: List[Corridor] = []
         self.room_corridor_links: Set[Tuple[int, int]] = set()
         self.room_room_links: Set[Tuple[int, int]] = set()
-        self.component_manager = ComponentManager()
         self.spatial_index = SpatialIndex()
         self.grid = [[" " for _ in range(self.config.width)] for _ in range(self.config.height)]
         self._graph_distance_cache: Dict[Tuple[GraphNode, GraphNode], Optional[int]] = {}
@@ -32,24 +30,17 @@ class DungeonLayout:
         self._graph_room_to_corridors: Optional[Dict[int, Tuple[int, ...]]] = None
         self._graph_room_to_rooms: Optional[Dict[int, Tuple[int, ...]]] = None
 
-    def new_component_id(self) -> int:
-        return self.component_manager.new_component()
-
-    def register_room(self, room: PlacedRoom, component_id: int) -> None:
+    def register_room(self, room: PlacedRoom) -> None:
         self.placed_rooms.append(room)
         room_index = len(self.placed_rooms) - 1
         room.index = room_index
-        root = self.component_manager.register_room(component_id)
-        room.component_id = root
         self.spatial_index.add_room(room_index, room)
         self._invalidate_graph_cache()
 
-    def register_corridor(self, corridor: Corridor, component_id: int) -> int:
+    def register_corridor(self, corridor: Corridor) -> int:
         self.corridors.append(corridor)
         new_index = len(self.corridors) - 1
         corridor.index = new_index
-        root = self.component_manager.register_corridor(component_id)
-        corridor.component_id = root
         self.spatial_index.add_corridor(new_index, corridor.geometry.tiles)
         if corridor.room_a_index is not None:
             self.room_corridor_links.add((corridor.room_a_index, new_index))
@@ -57,41 +48,6 @@ class DungeonLayout:
             self.room_corridor_links.add((corridor.room_b_index, new_index))
         self._invalidate_graph_cache()
         return new_index
-
-    def merge_components(self, *component_ids: int) -> int:
-        return self.component_manager.union(*component_ids)
-
-    def get_component_summary(self) -> Dict[int, Dict[str, List[int]]]:
-        return self.component_manager.component_summary()
-
-    def get_component_sizes(self) -> Dict[int, int]:
-        return self.component_manager.component_sizes()
-
-    def set_room_component(self, room_idx: int, component_id: int) -> int:
-        root = self.component_manager.set_room_component(room_idx, component_id)
-        self.placed_rooms[room_idx].component_id = root
-        return root
-
-    def set_corridor_component(self, corridor_idx: int, component_id: int) -> int:
-        root = self.component_manager.set_corridor_component(corridor_idx, component_id)
-        self.corridors[corridor_idx].component_id = root
-        return root
-
-    def normalize_room_component(self, room_idx: int) -> int:
-        root = self.component_manager.room_component(room_idx)
-        self.placed_rooms[room_idx].component_id = root
-        return root
-
-    def normalize_corridor_component(self, corridor_idx: int) -> int:
-        root = self.component_manager.corridor_component(corridor_idx)
-        self.corridors[corridor_idx].component_id = root
-        return root
-
-    def rooms_share_component(self, room_a_idx: int, room_b_idx: int) -> bool:
-        return (
-            self.normalize_room_component(room_a_idx)
-            == self.normalize_room_component(room_b_idx)
-        )
 
     def add_room_room_link(self, room_a_idx: int, room_b_idx: int) -> None:
         if room_a_idx == room_b_idx:
@@ -203,16 +159,7 @@ class DungeonLayout:
         if threshold <= 0:
             return True
 
-        node_a = self._normalize_graph_entity(entity_a)
-        node_b = self._normalize_graph_entity(entity_b)
-        component_a = self._component_id_for_node(node_a)
-        component_b = self._component_id_for_node(node_b)
-        if component_a < 0 or component_b < 0:
-            return True
-        if component_a != component_b:
-            return True
-
-        distance = self.graph_distance(node_a, node_b, stop_at=threshold)
+        distance = self.graph_distance(entity_a, entity_b, stop_at=threshold)
         if distance is None:
             return True
         return distance > threshold
@@ -346,12 +293,6 @@ class DungeonLayout:
         if kind == "corridor" and not (0 <= idx < len(self.corridors)):
             raise IndexError(f"Corridor index {idx} out of range")
         return (kind, idx)
-
-    def _component_id_for_node(self, node: GraphNode) -> int:
-        kind, idx = node
-        if kind == "room":
-            return self.normalize_room_component(idx)
-        return self.normalize_corridor_component(idx)
 
     def _invalidate_graph_cache(self) -> None:
         self._graph_distance_cache.clear()

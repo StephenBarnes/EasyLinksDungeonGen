@@ -13,21 +13,21 @@ def main() -> None:
     # Config for a big "realistic" dungeon - generally seems to be over 90% connected, though the generation process is slow.
     if True:
         config = DungeonConfig(
-            width=200,
-            height=200,
+            width=150,
+            height=150,
             room_templates=prototype_room_templates,
             direct_link_counts_probs={0: 0.55, 1: 0.25, 2: 0.15, 3: 0.05},
-            num_rooms_to_place=50,
+            num_rooms_to_place=60,
             min_room_separation=1,
             min_intra_component_connection_distance=10,
             corridor_length_for_split=8,
             max_parallel_corridor_perpendicular_distance=8,
             max_parallel_corridor_overlap=5,
-            min_rooms_required=10,
+            min_rooms_required=35,
             initial_corridor_length=CorridorLengthDistribution(
                 min_length=5,
-                max_length=100,
-                median_length=30,
+                max_length=25,
+                median_length=10,
             ),
             random_seed=None,
         )
@@ -49,8 +49,8 @@ def main() -> None:
             min_rooms_required=10,
             initial_corridor_length=CorridorLengthDistribution(
                 min_length=5,
-                max_length=50,
-                median_length=15,
+                max_length=25,
+                median_length=10,
             ),
             random_seed=None,
         )
@@ -67,11 +67,6 @@ def main() -> None:
     generator = DungeonGenerator(config)
 
     generator.generate()
-
-    # Debug: check number of components is correct
-    component_sizes = generator.layout.get_component_sizes()
-    largest_component_fraction = max(component_sizes.values()) / float(sum(component_sizes.values()))
-    print(f"Largest component: {int(largest_component_fraction * 100)}% of dungeon")
 
     generator.layout.draw_to_grid(draw_macrogrid=True)
     generator.layout.print_grid(horizontal_sep="")

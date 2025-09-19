@@ -15,8 +15,8 @@ with existing rooms or corridors, or reuse corridor tiles.
 Once a placement fits, the planner builds straight corridor geometries from
 each existing room to the bend room, verifying that the tile sets do not overlap
 and remain corridor-free inside the spatial index. When both corridors can be
-constructed, the plan is accepted and the applier merges the room components,
-registers the bend room, and commits the corridor geometries to the layout.
+constructed, the plan is accepted and the applier registers the bend room and
+commits the corridor geometries to the layout.
 """
 
 from __future__ import annotations
@@ -320,15 +320,8 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
         candidate: BentRoomCandidate,
         plan: BentRoomPlan,
     ) -> GrowerStepResult:
-        component_id = context.layout.merge_components(
-            context.layout.normalize_room_component(candidate.room_a_idx),
-            context.layout.normalize_room_component(candidate.room_b_idx),
-        )
-        context.layout.set_room_component(candidate.room_a_idx, component_id)
-        context.layout.set_room_component(candidate.room_b_idx, component_id)
-
         bend_room_index = len(context.layout.placed_rooms)
-        context.layout.register_room(plan.bend_room, component_id)
+        context.layout.register_room(plan.bend_room)
 
         for existing_room_idx, existing_port_idx, bend_port_idx, geometry in plan.corridor_plans:
             corridor = Corridor(
@@ -338,15 +331,13 @@ class BentRoomApplier(GrowerApplier[BentRoomCandidate, BentRoomPlan]):
                 port_b_index=bend_port_idx,
                 width=plan.width,
                 geometry=geometry,
-                component_id=component_id,
             )
-            context.layout.register_corridor(corridor, component_id)
+            context.layout.register_corridor(corridor)
             context.layout.placed_rooms[existing_room_idx].connected_port_indices.add(existing_port_idx)
             context.layout.placed_rooms[bend_room_index].connected_port_indices.add(bend_port_idx)
 
         self._created += 1
-        stop = self._stop_after_first or context.layout.component_manager.has_single_component()
-        return GrowerStepResult(applied=True, stop=stop)
+        return GrowerStepResult(applied=True, stop=self._stop_after_first)
 
     def finalize(self, context: GrowerContext) -> int:
         if self._created == 0:

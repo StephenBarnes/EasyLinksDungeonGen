@@ -12,9 +12,8 @@ the room to the bend and invokes the T-junction planner to splice into an
 existing corridor. This includes splitting the corridor geometry, generating
 port requirements for both existing corridor segments and the new branch, and
 trying T-junction templates that satisfy those constraints while respecting
-limited tile overlaps. The applier merges connected components, registers the
-new rooms and corridors, and rewires the corridor segments through the newly
-placed junction.
+limited tile overlaps. The applier registers the new rooms and corridors and
+rewires the corridor segments through the newly placed junction.
 """
 
 from __future__ import annotations
@@ -781,18 +780,10 @@ class BentRoomToCorridorApplier(
         plan: BentRoomToCorridorPlan,
     ) -> GrowerStepResult:
         """Commit bend and junction rooms plus the connecting corridors to the layout."""
-        component_id = context.layout.merge_components(
-            context.layout.normalize_room_component(candidate.room_idx),
-            context.layout.normalize_corridor_component(plan.target_corridor_idx),
-        )
-        context.layout.set_room_component(candidate.room_idx, component_id)
-        context.layout.set_corridor_component(plan.target_corridor_idx, component_id)
-
         context.invalidate_corridor_index(plan.target_corridor_idx)
 
         bend_room_index = len(context.layout.placed_rooms)
-        context.layout.register_room(plan.bend_room, component_id)
-        context.layout.set_room_component(bend_room_index, component_id)
+        context.layout.register_room(plan.bend_room)
 
         corridor_room_to_bend = Corridor(
             room_a_index=candidate.room_idx,
@@ -801,18 +792,15 @@ class BentRoomToCorridorApplier(
             port_b_index=plan.bend_room_port_idx,
             width=plan.width,
             geometry=plan.room_to_bend_geometry,
-            component_id=component_id,
         )
         corridor_room_to_bend_idx = context.layout.register_corridor(
             corridor_room_to_bend,
-            component_id,
         )
         context.layout.placed_rooms[candidate.room_idx].connected_port_indices.add(candidate.port_idx)
         context.layout.placed_rooms[bend_room_index].connected_port_indices.add(plan.bend_room_port_idx)
 
         junction_room_index = len(context.layout.placed_rooms)
-        context.layout.register_room(plan.junction_room, component_id)
-        context.layout.set_room_component(junction_room_index, component_id)
+        context.layout.register_room(plan.junction_room)
 
         branch_port_idx = plan.port_mapping.get(plan.branch_requirement_idx)
         branch_geometry = plan.requirements[plan.branch_requirement_idx].geometry
@@ -826,11 +814,9 @@ class BentRoomToCorridorApplier(
             port_b_index=branch_port_idx,
             width=plan.width,
             geometry=branch_geometry,
-            component_id=component_id,
         )
         corridor_bend_to_junction_idx = context.layout.register_corridor(
             corridor_bend_to_junction,
-            component_id,
         )
         context.layout.placed_rooms[bend_room_index].connected_port_indices.add(plan.bend_branch_port_idx)
         context.layout.placed_rooms[junction_room_index].connected_port_indices.add(branch_port_idx)
@@ -852,7 +838,6 @@ class BentRoomToCorridorApplier(
             plan.target_corridor_idx,
             existing_assignments,
             junction_room_index,
-            component_id,
         )
 
         context.layout.room_corridor_links.add((candidate.room_idx, plan.target_corridor_idx))
@@ -868,8 +853,7 @@ class BentRoomToCorridorApplier(
         self._created += 1
         self._bend_rooms += 1
         self._junction_rooms += 1
-        stop = self._stop_after_first or context.layout.component_manager.has_single_component()
-        return GrowerStepResult(applied=True, stop=stop)
+        return GrowerStepResult(applied=True, stop=self._stop_after_first)
 
     def finalize(self, context: GrowerContext) -> int:
         """Log how many placements succeeded and return the new link count."""

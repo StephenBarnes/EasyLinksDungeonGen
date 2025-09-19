@@ -65,7 +65,7 @@ class DungeonGenerator:
 
     def generate(self) -> None:
         """Generates the dungeon, by invoking dungeon-growers."""
-        # Note: This function is incomplete. Currently it runs our implemented growers in a fairly arbitrary order, mostly for testing. The final version will have more growers, and will include step 3 (counting components, deleting smaller components, and accepting or rejecting the final connected dungeon map).
+        # Note: This function is incomplete. Currently it runs our implemented growers in a fairly arbitrary order, mostly for testing. The final version will have more growers and a final validation pass to accept or reject the generated layout.
 
         context = GrowerContext(
             config=self.config,

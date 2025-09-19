@@ -427,7 +427,6 @@ class Corridor:
     port_b_index: Optional[int]
     width: int
     geometry: CorridorGeometry
-    component_id: int = -1
     index: int = -1
 
 
@@ -439,7 +438,6 @@ class PlacedRoom:
     x: int
     y: int
     rotation: Rotation
-    component_id: int = -1
     connected_port_indices: set[int] = field(default_factory=set)
     index: int = -1
 

@@ -12,8 +12,7 @@ def _place_room(layout, template, x, y, *, rotation=Rotation.DEG_0, connected_po
     room = PlacedRoom(template, x, y, rotation)
     if connected_ports:
         room.connected_port_indices.update(connected_ports)
-    component_id = layout.new_component_id()
-    layout.register_room(room, component_id)
+    layout.register_room(room)
     return room
 
 
@@ -49,8 +48,6 @@ def test_room_to_room_creates_four_way_intersection(make_context):
     assert {corridor.geometry.axis_index for corridor in layout.corridors} == {0, 1}
     for corridor in layout.corridors:
         assert junction_index in (corridor.room_a_index, corridor.room_b_index)
-
-    assert context.layout.component_manager.has_single_component()
 
 
 def test_bent_room_to_room_connects_diagonal_rooms(make_context):

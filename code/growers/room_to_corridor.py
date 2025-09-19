@@ -258,17 +258,10 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
         candidate: RoomToCorridorCandidate,
         plan: RoomToCorridorPlan,
     ) -> GrowerStepResult:
-        component_id = context.layout.merge_components(
-            context.layout.normalize_room_component(candidate.room_idx),
-            context.layout.normalize_corridor_component(plan.target_corridor_idx),
-        )
-        context.layout.set_room_component(candidate.room_idx, component_id)
-        context.layout.set_corridor_component(plan.target_corridor_idx, component_id)
-
         context.invalidate_corridor_index(plan.target_corridor_idx)
 
         junction_room_index = len(context.layout.placed_rooms)
-        context.layout.register_room(plan.junction_room, component_id)
+        context.layout.register_room(plan.junction_room)
 
         branch_requirement = plan.requirements[plan.branch_requirement_idx]
         branch_geometry = branch_requirement.geometry
@@ -282,9 +275,8 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
             port_b_index=branch_port_idx,
             width=plan.width,
             geometry=branch_geometry,
-            component_id=component_id,
         )
-        new_corridor_idx = context.layout.register_corridor(new_corridor, component_id)
+        new_corridor_idx = context.layout.register_corridor(new_corridor)
         context.layout.placed_rooms[candidate.room_idx].connected_port_indices.add(candidate.port_idx)
         context.layout.placed_rooms[junction_room_index].connected_port_indices.add(branch_port_idx)
         context.layout.room_corridor_links.add((candidate.room_idx, new_corridor_idx))
@@ -305,7 +297,6 @@ class RoomToCorridorApplier(GrowerApplier[RoomToCorridorCandidate, RoomToCorrido
             plan.target_corridor_idx,
             existing_assignments,
             junction_room_index,
-            component_id,
         )
 
         for idx in linked_indices:

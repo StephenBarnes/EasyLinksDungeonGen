@@ -99,17 +99,19 @@ def test_build_root_room_candidate_aligns_using_macro_offsets(
     assert candidate.y % config.macro_grid_size == 0
 
 
-def test_run_initial_tree_creates_single_component(tree_context: GrowerContext):
+def test_run_initial_tree_creates_connected_layout(tree_context: GrowerContext):
     random.seed(12345)
     run_initial_tree_grower(tree_context)
 
-    component_sizes = tree_context.layout.get_component_sizes()
-    assert len(component_sizes) == 1
-    component_id = next(iter(component_sizes))
     layout = tree_context.layout
     assert len(layout.placed_rooms) >= 1
-    assert all(room.component_id == component_id for room in layout.placed_rooms)
-    assert all(corridor.component_id == component_id for corridor in layout.corridors)
+    origin = ("room", layout.placed_rooms[0].index)
+    for room in layout.placed_rooms:
+        distance = layout.graph_distance(origin, ("room", room.index))
+        assert distance is not None
+    for corridor in layout.corridors:
+        distance = layout.graph_distance(origin, ("corridor", corridor.index))
+        assert distance is not None
 
 
 def test_corridor_length_distribution_within_bounds(tree_context: GrowerContext):

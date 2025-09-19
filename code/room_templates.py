@@ -41,7 +41,7 @@ prototype_room_templates = [
 			PortTemplate(pos=(0, 2.5), direction=Direction.WEST, widths=frozenset((2, 4))),
 			PortTemplate(pos=(7, 2.5), direction=Direction.EAST, widths=frozenset((2, 4))),
 		],
-		through_weight=2,
+		through_weight=1.2,
 		kinds=frozenset((RoomKind.STANDALONE, RoomKind.THROUGH)),
 	),
 	RoomTemplate(

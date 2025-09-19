@@ -721,7 +721,6 @@ class GrowerContext:
         corridor_idx: int,
         assignments: Dict[str, Tuple[PortRequirement, int]],
         junction_room_index: int,
-        component_id: int,
     ) -> List[int]:
         corridor = self.layout.corridors[corridor_idx]
         connected_indices: List[int] = []
@@ -745,7 +744,6 @@ class GrowerContext:
                 port_b_index=junction_port_idx,
                 width=corridor.width,
                 geometry=requirement.geometry,
-                component_id=component_id,
             )
             segments.append((end, segment_corridor))
 
@@ -761,13 +759,12 @@ class GrowerContext:
         corridor.port_b_index = primary_segment.port_b_index
         corridor.width = primary_segment.width
         corridor.geometry = primary_segment.geometry
-        self.layout.set_corridor_component(corridor_idx, component_id)
         self.layout.spatial_index.add_corridor(corridor_idx, corridor.geometry.tiles)
         self.layout.update_corridor_links(corridor_idx)
         connected_indices.append(corridor_idx)
 
         for _, segment in segments[1:]:
-            new_idx = self.layout.register_corridor(segment, component_id)
+            new_idx = self.layout.register_corridor(segment)
             connected_indices.append(new_idx)
 
         return connected_indices

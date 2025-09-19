@@ -33,8 +33,8 @@ DEFAULT_CONFIG_KWARGS = dict(
     min_rooms_required=10,
     initial_corridor_length=CorridorLengthDistribution(
         min_length=5,
-        max_length=100,
-        median_length=30,
+        max_length=40,
+        median_length=10,
     ),
     collect_metrics=True,
 )
@@ -48,7 +48,6 @@ def build_config(seed: int) -> DungeonConfig:
 class GenerationRunResult:
     seed: int
     duration: float
-    largest_component_fraction: float
     total_rooms: int
     total_corridors: int
     diversity_score: float
@@ -105,12 +104,7 @@ def run_single_generation(seed: int) -> GenerationRunResult:
     end = time.perf_counter()
 
     layout = generator.layout
-    component_summary = layout.get_component_summary()
-    largest_rooms = 0
-    for component in component_summary.values():
-        largest_rooms = max(largest_rooms, len(component.get("rooms", ())))
     total_rooms = len(layout.placed_rooms)
-    largest_fraction = (largest_rooms / total_rooms) if total_rooms else 0.0
 
     template_counts: Counter[str] = Counter(
         room.template.name for room in layout.placed_rooms
@@ -123,7 +117,6 @@ def run_single_generation(seed: int) -> GenerationRunResult:
     return GenerationRunResult(
         seed=seed,
         duration=end - start,
-        largest_component_fraction=largest_fraction,
         total_rooms=total_rooms,
         total_corridors=len(layout.corridors),
         diversity_score=diversity,
@@ -211,14 +204,6 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--min-connected-fraction",
-        type=float,
-        default=0.8,
-        help=(
-            "Minimum acceptable fraction of rooms in the largest connected component"
-        ),
-    )
-    parser.add_argument(
         "--min-diversity",
         type=float,
         default=0.4,
@@ -246,21 +231,13 @@ def main() -> None:
 
     for idx, result in enumerate(results, start=1):
         print(
-            "Run {idx:02d}: {time} (seed {seed}) | largest component {largest:.1%} | diversity {diversity:.3f}".format(
+            "Run {idx:02d}: {time} (seed {seed}) | diversity {diversity:.3f}".format(
                 idx=idx,
                 time=format_seconds(result.duration),
                 seed=result.seed,
-                largest=result.largest_component_fraction,
                 diversity=result.diversity_score,
             )
         )
-
-    connected_fractions = [r.largest_component_fraction for r in results]
-    mean_connected = statistics.mean(connected_fractions)
-    median_connected = statistics.median(connected_fractions)
-    connected_success = sum(
-        1 for value in connected_fractions if value >= args.min_connected_fraction
-    ) / len(results)
 
     diversity_scores = [r.diversity_score for r in results]
     mean_diversity = statistics.mean(diversity_scores)
@@ -284,15 +261,6 @@ def main() -> None:
     print(f"Median generation time: {format_seconds(median_duration)}")
     print(
         f"Worst-case generation time: {format_seconds(worst_duration)} (seed {worst_seed})"
-    )
-    print(
-        "Largest connected component: mean {mean:.1%}, median {median:.1%},"
-        " success rate {success:.1%} for threshold {threshold:.1%}".format(
-            mean=mean_connected,
-            median=median_connected,
-            success=connected_success,
-            threshold=args.min_connected_fraction,
-        )
     )
     print(
         "Room diversity (1 - Gini): mean {mean:.3f}, median {median:.3f},"

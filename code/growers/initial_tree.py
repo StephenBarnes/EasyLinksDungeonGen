@@ -55,7 +55,6 @@ class InitialTreeHelper:
         self._pending_ports: Deque[Tuple[int, int]] = deque()
         self._processed_ports: Set[Tuple[int, int]] = set()
         self._rooms_created = 0
-        self._root_component_id: Optional[int] = None
 
     # ------------------------------------------------------------------
     # Public lifecycle helpers
@@ -67,13 +66,9 @@ class InitialTreeHelper:
             if root_room is None:
                 raise ValueError("ERROR: failed to place initial root room.")
             initial_children = self._spawn_direct_links_recursive(root_room)
-            self._root_component_id = self.layout.normalize_room_component(root_room.index)
             rooms_to_seed = [root_room, *initial_children]
         else:
             rooms_to_seed = list(self.layout.placed_rooms)
-            self._root_component_id = self.layout.normalize_room_component(
-                rooms_to_seed[0].index
-            )
 
         self.enqueue_rooms(rooms_to_seed)
 
@@ -95,8 +90,6 @@ class InitialTreeHelper:
                 continue
             room = context.layout.placed_rooms[room_idx]
             if port_idx in room.connected_port_indices:
-                continue
-            if self._root_component_id is not None and room.component_id != self._root_component_id:
                 continue
             self._processed_ports.add(key)
             yield InitialTreeCandidate(room_idx=room_idx, port_idx=port_idx)
@@ -140,18 +133,9 @@ class InitialTreeHelper:
         plan: CorridorExpansionPlan,
     ) -> GrowerStepResult:
         anchor_room = self.layout.placed_rooms[candidate.room_idx]
-        anchor_component = self.layout.normalize_room_component(anchor_room.index)
-
-        self.layout.register_room(plan.room, anchor_component)
+        self.layout.register_room(plan.room)
         plan.room.connected_port_indices.add(plan.room_port_index)
         anchor_room.connected_port_indices.add(candidate.port_idx)
-
-        merged_component = self.layout.merge_components(
-            anchor_component, plan.room.component_id
-        )
-        self.layout.set_room_component(anchor_room.index, merged_component)
-        self.layout.set_room_component(plan.room.index, merged_component)
-        self._root_component_id = merged_component
 
         corridor = Corridor(
             room_a_index=anchor_room.index,
@@ -161,8 +145,7 @@ class InitialTreeHelper:
             width=plan.width,
             geometry=plan.geometry,
         )
-        corridor_idx = self.layout.register_corridor(corridor, merged_component)
-        self.layout.set_corridor_component(corridor_idx, merged_component)
+        corridor_idx = self.layout.register_corridor(corridor)
 
         new_rooms = [plan.room]
         new_rooms.extend(self._spawn_direct_links_recursive(plan.room))
@@ -192,8 +175,7 @@ class InitialTreeHelper:
             rotation = self._select_root_rotation(template, placement_category, side_proximities)
             candidate_room = self._build_root_room_candidate(template, rotation, macro_x, macro_y)
             if self.layout.is_valid_placement(candidate_room):
-                component_id = self.layout.new_component_id()
-                self.layout.register_room(candidate_room, component_id)
+                self.layout.register_room(candidate_room)
                 return candidate_room
 
             attempts += 1
@@ -481,7 +463,6 @@ class InitialTreeHelper:
     def _attempt_place_connected_to(self, anchor_room: PlacedRoom) -> Optional[PlacedRoom]:
         if anchor_room.index < 0:
             raise ValueError("Anchor room must be registered before creating connections")
-        anchor_component_id = self.layout.normalize_room_component(anchor_room.index)
         anchor_world_ports = anchor_room.get_world_ports()
         available_anchor_indices = anchor_room.get_available_port_indices()
         random.shuffle(available_anchor_indices)
@@ -521,7 +502,7 @@ class InitialTreeHelper:
                 ny = int(round(target_port_pos[1] - rpy))
                 candidate = PlacedRoom(template, nx, ny, rotation)
                 if self.layout.is_valid_placement_with_anchor(candidate, anchor_room):
-                    self.layout.register_room(candidate, anchor_component_id)
+                    self.layout.register_room(candidate)
                     self.layout.add_room_room_link(anchor_room.index, candidate.index)
                     anchor_room.connected_port_indices.add(anchor_idx)
                     candidate.connected_port_indices.add(cand_idx)

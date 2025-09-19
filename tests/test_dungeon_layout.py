@@ -35,8 +35,7 @@ def test_would_create_long_parallel_detects_close_overlap(dungeon_layout):
         width=2,
         geometry=existing_geometry,
     )
-    existing_component = layout.new_component_id()
-    layout.register_corridor(existing_corridor, existing_component)
+    layout.register_corridor(existing_corridor)
 
     candidate_geometry = CorridorGeometry(
         tiles=tuple(TilePos(x, 11) for x in range(4, 13)),
@@ -74,6 +73,6 @@ def test_would_create_long_parallel_respects_skip_indices(dungeon_layout):
         width=2,
         geometry=existing_geometry,
     )
-    layout.register_corridor(corridor, layout.new_component_id())
+    layout.register_corridor(corridor)
 
     assert layout.would_create_long_parallel(candidate_geometry, skip_indices=[0]) is False

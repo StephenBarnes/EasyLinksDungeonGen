@@ -225,21 +225,10 @@ class ThroughCorridorApplier(GrowerApplier[ThroughCorridorCandidate, ThroughCorr
         corridor_idx = plan.corridor_idx
         corridor = context.layout.corridors[corridor_idx]
 
-        component_ids: List[int] = [context.layout.normalize_corridor_component(corridor_idx)]
-        for room_idx in (corridor.room_a_index, corridor.room_b_index):
-            if room_idx is not None:
-                component_ids.append(context.layout.normalize_room_component(room_idx))
-
-        component_id = context.layout.merge_components(*component_ids)
-        context.layout.set_corridor_component(corridor_idx, component_id)
-        for room_idx in (corridor.room_a_index, corridor.room_b_index):
-            if room_idx is not None:
-                context.layout.set_room_component(room_idx, component_id)
-
         context.invalidate_corridor_index(corridor_idx)
 
         junction_room_index = len(context.layout.placed_rooms)
-        context.layout.register_room(plan.junction_room, component_id)
+        context.layout.register_room(plan.junction_room)
 
         junction_room = context.layout.placed_rooms[junction_room_index]
         assignments: Dict[str, Tuple[PortRequirement, int]] = {}
@@ -258,7 +247,6 @@ class ThroughCorridorApplier(GrowerApplier[ThroughCorridorCandidate, ThroughCorr
             corridor_idx,
             assignments,
             junction_room_index,
-            component_id,
         )
 
         context.validate_room_corridor_clearance(junction_room_index)
