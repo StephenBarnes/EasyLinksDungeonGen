@@ -12,7 +12,7 @@ import math
 import random
 import statistics
 import time
-from typing import Dict, List
+from typing import Callable, Dict, List
 
 import networkx as nx
 
@@ -41,10 +41,12 @@ DEFAULT_CONFIG_KWARGS = dict(
     collect_metrics=True,
 )
 
-ROOM_COMPLETION_THRESHOLD_RATIO = 0.8
-AREA_COVERAGE_THRESHOLD = 0.2
-CYCLE_COUNT_THRESHOLD = 1
-CYCLE_LENGTH_THRESHOLD = 5
+DEFAULT_ROOM_COMPLETION_THRESHOLD_RATIO = 0.8
+DEFAULT_AREA_COVERAGE_THRESHOLD = 0.2
+DEFAULT_CYCLE_COUNT_THRESHOLD = 1
+DEFAULT_CYCLE_LENGTH_THRESHOLD = 5
+
+PERCENTILES = [1.0, 5.0] + [float(value) for value in range(10, 100, 5)] + [99.0]
 
 
 def build_config(seed: int) -> DungeonConfig:
@@ -106,18 +108,6 @@ def percentile(values: List[float], pct: float) -> float:
     return lower_value + (upper_value - lower_value) * fraction
 
 
-def describe_distribution(values: List[float]) -> str:
-    if not values:
-        return "mean nan, median nan, p10 nan, p90 nan"
-    mean_val = statistics.mean(values)
-    median_val = statistics.median(values)
-    p10 = percentile(values, 10.0)
-    p90 = percentile(values, 90.0)
-    return (
-        f"mean {mean_val:.3f}, median {median_val:.3f}, p10 {p10:.3f}, p90 {p90:.3f}"
-    )
-
-
 def fraction_at_least(values: List[float], threshold: float) -> float:
     if not values:
         return float("nan")
@@ -128,6 +118,88 @@ def format_fraction(value: float) -> str:
     if math.isnan(value):
         return "nan"
     return f"{value:.1%}"
+
+
+def format_value(value: float, formatter: Callable[[float], str] | None = None) -> str:
+    numeric = float(value)
+    if math.isnan(numeric):
+        return "nan"
+    if formatter is None:
+        return f"{numeric:.3f}"
+    return formatter(numeric)
+
+
+def collected_percentiles(values: List[float]) -> List[tuple[float, float]]:
+    return [(pct, percentile(values, pct)) for pct in PERCENTILES]
+
+
+def compute_basic_stats(values: List[float]) -> Dict[str, float]:
+    return {
+        "mean": statistics.mean(values),
+        "median": statistics.median(values),
+        "min": min(values),
+        "max": max(values),
+        "stdev": statistics.stdev(values) if len(values) > 1 else float("nan"),
+    }
+
+
+@dataclass
+class MetricDefinition:
+    name: str
+    values: List[float]
+    value_formatter: Callable[[float], str] | None = None
+    success_threshold: float | None = None
+    success_label: str | None = None
+    notes: str | None = None
+
+
+def report_metric(definition: MetricDefinition) -> None:
+    values = definition.values
+    print(definition.name + ":")
+    if not values:
+        print("  (no data)")
+        if definition.notes:
+            print(f"  {definition.notes}")
+        return
+
+    stats = compute_basic_stats(values)
+    mean = format_value(stats["mean"], definition.value_formatter)
+    median = format_value(stats["median"], definition.value_formatter)
+    minimum = format_value(stats["min"], definition.value_formatter)
+    maximum = format_value(stats["max"], definition.value_formatter)
+    stdev = format_value(stats["stdev"], definition.value_formatter)
+
+    print(
+        "  Count {count}, mean {mean}, median {median}, min {min}, max {max}, stdev {stdev}".format(
+            count=len(values),
+            mean=mean,
+            median=median,
+            min=minimum,
+            max=maximum,
+            stdev=stdev,
+        )
+    )
+
+    percentile_parts = []
+    for pct, value in collected_percentiles(values):
+        label = f"p{int(pct)}" if float(pct).is_integer() else f"p{pct:g}"
+        percentile_parts.append(f"{label}={format_value(value, definition.value_formatter)}")
+    print("  Percentiles: " + ", ".join(percentile_parts))
+
+    if definition.success_threshold is not None:
+        success_rate = fraction_at_least(values, definition.success_threshold)
+        label = definition.success_label or (
+            ">= " + format_value(definition.success_threshold, definition.value_formatter)
+        )
+        print(
+            "  Success rate {success} ({label})".format(
+                success=format_fraction(success_rate),
+                label=label,
+            )
+        )
+
+    if definition.notes:
+        print(f"  {definition.notes}")
 
 
 def bounding_box_area(layout) -> tuple[int, int, float]:
@@ -165,7 +237,7 @@ def build_room_graph(layout) -> nx.Graph:
     return graph
 
 
-def run_single_generation(seed: int) -> GenerationRunResult:
+def run_single_generation(seed: int, room_completion_ratio: float) -> GenerationRunResult:
     """Run one dungeon generation with the provided seed and collect metrics."""
     config = build_config(seed)
 
@@ -181,7 +253,7 @@ def run_single_generation(seed: int) -> GenerationRunResult:
     total_rooms = len(layout.placed_rooms)
 
     room_target = layout.config.num_rooms_to_place
-    room_threshold = math.floor(room_target * ROOM_COMPLETION_THRESHOLD_RATIO)
+    room_threshold = math.floor(room_target * room_completion_ratio)
     meets_room_threshold = total_rooms >= room_threshold
 
     bbox_area, map_area, bbox_fraction = bounding_box_area(layout)
@@ -219,7 +291,9 @@ def run_single_generation(seed: int) -> GenerationRunResult:
     )
 
 
-def run_benchmark(num_runs: int, seed: int | None) -> List[GenerationRunResult]:
+def run_benchmark(
+    num_runs: int, seed: int | None, room_completion_ratio: float
+) -> List[GenerationRunResult]:
     """Run the generator multiple times and collect run-level metrics."""
     rng = random.Random(seed)
 
@@ -227,7 +301,7 @@ def run_benchmark(num_runs: int, seed: int | None) -> List[GenerationRunResult]:
 
     for _ in range(num_runs):
         run_seed = rng.randint(0, 1_000_000)
-        result = run_single_generation(run_seed)
+        result = run_single_generation(run_seed, room_completion_ratio)
         results.append(result)
 
     return results
@@ -304,30 +378,69 @@ def main() -> None:
             "Minimum acceptable diversity score (1 - Gini coefficient) for room templates"
         ),
     )
+    parser.add_argument(
+        "--room-completion-threshold-ratio",
+        type=float,
+        default=DEFAULT_ROOM_COMPLETION_THRESHOLD_RATIO,
+        help=(
+            "Fraction of the target room count required for a run to be considered successful"
+        ),
+    )
+    parser.add_argument(
+        "--area-coverage-threshold",
+        type=float,
+        default=DEFAULT_AREA_COVERAGE_THRESHOLD,
+        help="Minimum bounding-box area fraction of the map to consider coverage acceptable",
+    )
+    parser.add_argument(
+        "--cycle-count-threshold",
+        type=float,
+        default=DEFAULT_CYCLE_COUNT_THRESHOLD,
+        help="Minimum cycle count in the room graph for success evaluation",
+    )
+    parser.add_argument(
+        "--cycle-length-threshold",
+        type=float,
+        default=DEFAULT_CYCLE_LENGTH_THRESHOLD,
+        help="Minimum cycle length for success evaluation",
+    )
     args = parser.parse_args()
 
     if args.runs <= 0:
         raise SystemExit("Number of runs must be a positive integer")
+    if not (0.0 <= args.min_diversity <= 1.0):
+        raise SystemExit("Minimum diversity must be within [0, 1]")
+    if not (0.0 < args.room_completion_threshold_ratio <= 1.0):
+        raise SystemExit("Room completion threshold ratio must be within (0, 1]")
+    if not (0.0 <= args.area_coverage_threshold <= 1.0):
+        raise SystemExit("Area coverage threshold must be within [0, 1]")
+    if args.cycle_count_threshold < 0.0:
+        raise SystemExit("Cycle count threshold must be non-negative")
+    if args.cycle_length_threshold < 0.0:
+        raise SystemExit("Cycle length threshold must be non-negative")
 
-    results = run_benchmark(args.runs, args.seed)
+    results = run_benchmark(
+        args.runs, args.seed, args.room_completion_threshold_ratio
+    )
     if not results:
         raise SystemExit("No runs executed")
 
     durations = [result.duration for result in results]
     run_seeds = [result.seed for result in results]
 
-    mean_duration = statistics.mean(durations)
-    median_duration = statistics.median(durations)
     worst_duration = max(durations)
     worst_index = durations.index(worst_duration)
     worst_seed = run_seeds[worst_index]
 
     rooms_values = [float(result.total_rooms) for result in results]
+    corridors_values = [float(result.total_corridors) for result in results]
     room_target = results[0].room_target
     room_threshold = results[0].room_acceptance_threshold
     bounding_fractions = [result.bounding_box_area_fraction for result in results]
     cycle_counts = [float(result.cycle_count) for result in results]
     cycle_lengths_all = [float(length) for result in results for length in result.cycle_lengths]
+
+    diversity_scores = [r.diversity_score for r in results]
 
     for idx, result in enumerate(results, start=1):
         run_status = "ok" if result.meets_room_threshold else "low"
@@ -360,14 +473,6 @@ def main() -> None:
             )
         )
 
-    diversity_scores = [r.diversity_score for r in results]
-    mean_diversity = statistics.mean(diversity_scores)
-    median_diversity = statistics.median(diversity_scores)
-    diversity_p5 = percentile(diversity_scores, 5.0)
-    diversity_success = sum(
-        1 for value in diversity_scores if value >= args.min_diversity
-    ) / len(results)
-
     total_template_counts: Counter[str] = Counter()
     total_rooms = 0
     for result in results:
@@ -378,65 +483,76 @@ def main() -> None:
 
     print()
     print(f"Config runs: {args.runs}")
-    print(f"Mean generation time: {format_seconds(mean_duration)}")
-    print(f"Median generation time: {format_seconds(median_duration)}")
     print(
         f"Worst-case generation time: {format_seconds(worst_duration)} (seed {worst_seed})"
     )
-    print(
-        "Room diversity (1 - Gini): mean {mean:.3f}, median {median:.3f},"
-        " p5 {p5:.3f}, success rate {success:.1%} for threshold {threshold:.3f}".format(
-            mean=mean_diversity,
-            median=median_diversity,
-            p5=diversity_p5,
-            success=diversity_success,
-            threshold=args.min_diversity,
-        )
-    )
+    metrics_to_report = [
+        MetricDefinition(
+            name="Generation time",
+            values=durations,
+            value_formatter=lambda value: f"{value:.4f}s",
+        ),
+        MetricDefinition(
+            name="Rooms placed",
+            values=rooms_values,
+            value_formatter=lambda value: f"{value:.0f}",
+            success_threshold=float(room_threshold),
+            success_label=(
+                f">= {format_value(room_threshold, lambda value: f'{value:.0f}')}"
+                f" (target {room_target})"
+            ),
+        ),
+        MetricDefinition(
+            name="Corridors placed",
+            values=corridors_values,
+            value_formatter=lambda value: f"{value:.0f}",
+        ),
+        MetricDefinition(
+            name="Room diversity (1 - Gini)",
+            values=diversity_scores,
+            value_formatter=lambda value: f"{value:.3f}",
+            success_threshold=args.min_diversity,
+            success_label=f">= {args.min_diversity:.3f}",
+        ),
+        MetricDefinition(
+            name="Bounding coverage",
+            values=bounding_fractions,
+            value_formatter=lambda value: f"{value:.1%}",
+            success_threshold=args.area_coverage_threshold,
+            success_label=(
+                f">= {format_value(args.area_coverage_threshold, lambda value: f'{value:.1%}')}"
+            ),
+        ),
+        MetricDefinition(
+            name="Cycle count",
+            values=cycle_counts,
+            value_formatter=lambda value: f"{value:.1f}",
+            success_threshold=args.cycle_count_threshold,
+            success_label=(
+                f">= {format_value(args.cycle_count_threshold, lambda value: f'{value:.1f}')}"
+            ),
+        ),
+    ]
 
-    rooms_success = fraction_at_least(rooms_values, float(room_threshold))
-    area_success = fraction_at_least(bounding_fractions, AREA_COVERAGE_THRESHOLD)
-    cycle_success = fraction_at_least(cycle_counts, float(CYCLE_COUNT_THRESHOLD))
-    cycle_length_success = fraction_at_least(
-        cycle_lengths_all, float(CYCLE_LENGTH_THRESHOLD)
-    )
-
-    print(
-        "Rooms placed: {distribution}, success rate {success} for"
-        " threshold >= {threshold} (target {target}).".format(
-            distribution=describe_distribution(rooms_values),
-            success=format_fraction(rooms_success),
-            threshold=room_threshold,
-            target=room_target,
-        )
-    )
-    print(
-        "Bounding coverage: {distribution}, success rate {success} for"
-        " threshold {threshold}.".format(
-            distribution=describe_distribution(bounding_fractions),
-            success=format_fraction(area_success),
-            threshold=f"{AREA_COVERAGE_THRESHOLD:.0%}",
-        )
-    )
-    print(
-        "Cycle count: {distribution}, success rate {success} for"
-        " threshold >= {threshold}.".format(
-            distribution=describe_distribution(cycle_counts),
-            success=format_fraction(cycle_success),
-            threshold=CYCLE_COUNT_THRESHOLD,
-        )
-    )
-    if cycle_lengths_all:
-        print(
-            "Cycle length: {distribution}, success rate {success} for"
-            " threshold >= {threshold}.".format(
-                distribution=describe_distribution(cycle_lengths_all),
-                success=format_fraction(cycle_length_success),
-                threshold=CYCLE_LENGTH_THRESHOLD,
+    cycle_length_notes = "No cycles observed across runs." if not cycle_lengths_all else None
+    metrics_to_report.append(
+        MetricDefinition(
+            name="Cycle length",
+            values=cycle_lengths_all,
+            value_formatter=lambda value: f"{value:.1f}",
+            success_threshold=args.cycle_length_threshold if cycle_lengths_all else None,
+            success_label=(
+                f">= {format_value(args.cycle_length_threshold, lambda value: f'{value:.1f}')}"
             )
+            if cycle_lengths_all
+            else None,
+            notes=cycle_length_notes,
         )
-    else:
-        print("Cycle length: no cycles observed across runs.")
+    )
+
+    for metric in metrics_to_report:
+        print()
+        report_metric(metric)
 
     if total_rooms > 0:
         print()
