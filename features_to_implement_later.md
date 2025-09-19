@@ -1,24 +1,34 @@
-- Add a RoomKind.DIRECT_LINKED.
+- Add RoomKind.DIRECT_LINKED, and only use those for directly-linked rooms created by the initial_tree.py grower. (Root rooms should still use STANDALONE, DIRECT_LINKED is only for the direct-linked rooms tacked on to the root room.)
+	- Also add direct_linked_weight analogous to existing weights. The existing fields like root_weight_middle (or edge or intermediate) should not apply to the choice of a direct-linked room.
+- Add first_root_weight field to rooms, applied only to the first root room created by the initial tree grower.
 
-- Add stop_after_first arg to through-room generator, so that we don't place too many through-rooms, especially since that reduces room template diversity.
+- Instead of setting direction preference when creating each RoomTemplate, rather automatically infer it by checking which sides have door-ports on them. Eg the 90-degree bend templates should avoid having either door port facing map edge.
 
-- Add options to run growers only for specific rooms or corridors, to improve performance. When one step adds rooms or corridors, we only want subsequent growers to consider new connections involving those, not re-consider all of the possible options.
+- Add a re-centering step? If dungeon is on one side of the map, move it closer to the middle, then try adding more rooms.
+
+- Make initial-tree-grower respect the rules for long parallel corridors
+
+- Confirm that initial grower isn't running graph distance checks, etc.
+
+- Make it retry step 1, if we couldn't make enough rooms. Remove the accept-reject thing from dungeonconfig.
+
+- Remove the rotate_rooms grower, which is obsolete now.
+
+- Test that the code limiting growers to considering new rooms and corridors only is actually working.
 
 - Use different connection-distance thresholds for different growers.
 
-- Place all root rooms in a smaller rectangle, say only in the central 80% of the map along each direction. Add a DungeonConfig field for this 80% value. Also adjust the _categorize_side_distance function in root_room_placer.py to adjust for the smaller size.
-
-- Add support for weights when choosing room templates for T-junctions, 4-way junctions, and bend rooms. We generally want to prefer placing the bigger options if possible, and use the tiny 2x2 or 2x4 rooms only as a last resort.
+- Place first root room in a smaller rectangle, say only in the central 30% of the map along each dimension. Add a DungeonConfig field for this 30% value. Also adjust the _categorize_side_distance function in initial tree grower to adjust for the smaller size.
 
 - For rooms with only 1 connected port at the end, implement a contraction step where we try to move them inward and shorten the corridor.
 
-- Ban creation of very long corridors. (Test how this affects total connectivity.)
+- Ban creation of very long corridors by step-2 growers. (Test how this affects total connectivity.)
 
-- Implement tests.
-
-- Implement integration testing to measure metrics over many random runs. This would allow testing the impact of tweaks and optimizations.
-	- Measure performance of the entire gen algorithm. (Done.)
-	- Measure some metrics about dungeon structure, such as the number of cycles and distribution of their sizes.
+- Improve benchmarker/metrics.
+	- Track number of rooms created in total, and number above some acceptance threshold.
+	- Add graph/network theory metrics to benchmarking algorithm.
+		- Number of cycles.
+		- Distribution of cycle size.
 
 - Add a grower that looks for parallel corridors and creates a corridor between them, creating 2 T-junctions at the ends.
 
