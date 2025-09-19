@@ -15,8 +15,8 @@ from growers import (
     run_bent_room_to_corridor_grower,
     run_through_corridor_grower,
     run_rotate_rooms_grower,
-    run_initial_tree_grower,
 )
+from growers.initial_tree import run_initial_tree_grower
 from dungeon_layout import DungeonLayout
 from metrics import GenerationMetrics
 
