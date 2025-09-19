@@ -7,12 +7,16 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import datetime
 from dataclasses import dataclass
+import json
 import math
+import os
 import random
 import statistics
+import subprocess
 import time
-from typing import Callable, Dict, List
+from typing import Any, Callable, Dict, List
 
 import networkx as nx
 
@@ -69,6 +73,8 @@ class GenerationRunResult:
     bounding_box_area_fraction: float
     cycle_count: int
     cycle_lengths: List[int]
+    largest_component_fraction: float
+    graph_diameter: int
     template_counts: Counter[str]
     grower_metrics: Dict[str, Dict[str, float | int]]
 
@@ -129,6 +135,17 @@ def format_value(value: float, formatter: Callable[[float], str] | None = None) 
     return formatter(numeric)
 
 
+def json_safe_number(value: float | int | None) -> float | int | None:
+    if value is None:
+        return None
+    numeric = float(value)
+    if math.isnan(numeric) or math.isinf(numeric):
+        return None
+    if isinstance(value, int):
+        return value
+    return numeric
+
+
 def collected_percentiles(values: List[float]) -> List[tuple[float, float]]:
     return [(pct, percentile(values, pct)) for pct in PERCENTILES]
 
@@ -145,6 +162,7 @@ def compute_basic_stats(values: List[float]) -> Dict[str, float]:
 
 @dataclass
 class MetricDefinition:
+    key: str
     name: str
     values: List[float]
     value_formatter: Callable[[float], str] | None = None
@@ -200,6 +218,68 @@ def report_metric(definition: MetricDefinition) -> None:
 
     if definition.notes:
         print(f"  {definition.notes}")
+
+
+def summarize_metric_for_json(definition: MetricDefinition) -> Dict[str, Any]:
+    values = definition.values
+    summary: Dict[str, Any] = {
+        "count": len(values),
+        "notes": definition.notes if definition.notes else None,
+    }
+
+    if values:
+        stats = compute_basic_stats(values)
+        summary.update(
+            {
+                "mean": json_safe_number(stats["mean"]),
+                "median": json_safe_number(stats["median"]),
+                "min": json_safe_number(stats["min"]),
+                "max": json_safe_number(stats["max"]),
+                "stdev": json_safe_number(stats["stdev"]),
+            }
+        )
+    else:
+        summary.update({"mean": None, "median": None, "min": None, "max": None, "stdev": None})
+
+    percentiles = {}
+    for pct in PERCENTILES:
+        label = f"p{int(pct)}" if float(pct).is_integer() else f"p{pct:g}"
+        percentiles[label] = (
+            json_safe_number(percentile(values, pct)) if values else None
+        )
+    summary["percentiles"] = percentiles
+
+    if definition.success_threshold is not None:
+        success_rate = fraction_at_least(values, definition.success_threshold) if values else float("nan")
+        summary["success_rate"] = json_safe_number(success_rate)
+        summary["success_threshold"] = json_safe_number(definition.success_threshold)
+
+    if summary["notes"] is None:
+        summary.pop("notes")
+
+    return summary
+
+
+def git_output(args: List[str]) -> str | None:
+    try:
+        completed = subprocess.run(
+            args,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return completed.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+
+
+def get_git_commit_hash() -> str | None:
+    return git_output(["git", "rev-parse", "HEAD"])
+
+
+def get_git_commit_message() -> str | None:
+    return git_output(["git", "log", "-1", "--pretty=%B"])
 
 
 def bounding_box_area(layout) -> tuple[int, int, float]:
@@ -263,6 +343,21 @@ def run_single_generation(seed: int, room_completion_ratio: float) -> Generation
     cycle_lengths = [len(cycle) for cycle in basis]
     cycle_count = len(cycle_lengths)
 
+    largest_component_fraction = 0.0
+    graph_diameter = 0
+    if total_rooms > 0 and graph.number_of_nodes() > 0:
+        components = list(nx.connected_components(graph))
+        if components:
+            largest_component_nodes = max(components, key=len)
+            largest_size = len(largest_component_nodes)
+            largest_component_fraction = largest_size / total_rooms if total_rooms else 0.0
+            if largest_size >= 2:
+                subgraph = graph.subgraph(largest_component_nodes).copy()
+                try:
+                    graph_diameter = int(nx.diameter(subgraph))
+                except nx.NetworkXError:
+                    graph_diameter = 0
+
     template_counts: Counter[str] = Counter(
         room.template.name for room in layout.placed_rooms
     )
@@ -286,6 +381,8 @@ def run_single_generation(seed: int, room_completion_ratio: float) -> Generation
         bounding_box_area_fraction=bbox_fraction,
         cycle_count=cycle_count,
         cycle_lengths=cycle_lengths,
+        largest_component_fraction=largest_component_fraction,
+        graph_diameter=graph_diameter,
         template_counts=template_counts,
         grower_metrics=grower_metrics,
     )
@@ -404,6 +501,14 @@ def main() -> None:
         default=DEFAULT_CYCLE_LENGTH_THRESHOLD,
         help="Minimum cycle length for success evaluation",
     )
+    parser.add_argument(
+        "--run-description",
+        type=str,
+        default=None,
+        help=(
+            "Optional description for this benchmark run; defaults to the latest commit message"
+        ),
+    )
     args = parser.parse_args()
 
     if args.runs <= 0:
@@ -418,6 +523,13 @@ def main() -> None:
         raise SystemExit("Cycle count threshold must be non-negative")
     if args.cycle_length_threshold < 0.0:
         raise SystemExit("Cycle length threshold must be non-negative")
+
+    commit_hash = get_git_commit_hash()
+    latest_commit_message = get_git_commit_message()
+    default_description = (
+        latest_commit_message.strip() if latest_commit_message else "Latest commit message unavailable."
+    )
+    run_description = args.run_description.strip() if args.run_description else default_description
 
     results = run_benchmark(
         args.runs, args.seed, args.room_completion_threshold_ratio
@@ -441,6 +553,10 @@ def main() -> None:
     cycle_lengths_all = [float(length) for result in results for length in result.cycle_lengths]
 
     diversity_scores = [r.diversity_score for r in results]
+    largest_component_fractions = [r.largest_component_fraction for r in results]
+    graph_diameters = [float(r.graph_diameter) for r in results]
+
+    results_json: List[Dict[str, Any]] = []
 
     for idx, result in enumerate(results, start=1):
         run_status = "ok" if result.meets_room_threshold else "low"
@@ -473,6 +589,34 @@ def main() -> None:
             )
         )
 
+        grower_times = {
+            name: float(metrics.get("total_time", 0.0))
+            for name, metrics in sorted(result.grower_metrics.items())
+        }
+
+        quality_metrics = {
+            "num_rooms": result.total_rooms,
+            "num_corridors": result.total_corridors,
+            "bounding_box_fraction": result.bounding_box_area_fraction,
+            "largest_component_fraction": result.largest_component_fraction,
+            "graph_diameter": result.graph_diameter,
+            "num_cycles": result.cycle_count,
+            "diversity_score": result.diversity_score,
+        }
+
+        results_json.append(
+            {
+                "run_id": idx,
+                "seed": result.seed,
+                "meets_room_threshold": result.meets_room_threshold,
+                "room_target": result.room_target,
+                "room_acceptance_threshold": result.room_acceptance_threshold,
+                "total_time_seconds": result.duration,
+                "grower_times": grower_times,
+                "quality_metrics": quality_metrics,
+            }
+        )
+
     total_template_counts: Counter[str] = Counter()
     total_rooms = 0
     for result in results:
@@ -488,11 +632,13 @@ def main() -> None:
     )
     metrics_to_report = [
         MetricDefinition(
+            key="generation_time",
             name="Generation time",
             values=durations,
             value_formatter=lambda value: f"{value:.4f}s",
         ),
         MetricDefinition(
+            key="rooms_placed",
             name="Rooms placed",
             values=rooms_values,
             value_formatter=lambda value: f"{value:.0f}",
@@ -503,11 +649,13 @@ def main() -> None:
             ),
         ),
         MetricDefinition(
+            key="corridors_placed",
             name="Corridors placed",
             values=corridors_values,
             value_formatter=lambda value: f"{value:.0f}",
         ),
         MetricDefinition(
+            key="diversity",
             name="Room diversity (1 - Gini)",
             values=diversity_scores,
             value_formatter=lambda value: f"{value:.3f}",
@@ -515,6 +663,7 @@ def main() -> None:
             success_label=f">= {args.min_diversity:.3f}",
         ),
         MetricDefinition(
+            key="bounding_coverage",
             name="Bounding coverage",
             values=bounding_fractions,
             value_formatter=lambda value: f"{value:.1%}",
@@ -524,6 +673,19 @@ def main() -> None:
             ),
         ),
         MetricDefinition(
+            key="largest_component_fraction",
+            name="Largest component coverage",
+            values=largest_component_fractions,
+            value_formatter=lambda value: f"{value:.1%}",
+        ),
+        MetricDefinition(
+            key="graph_diameter",
+            name="Graph diameter",
+            values=graph_diameters,
+            value_formatter=lambda value: f"{value:.0f}",
+        ),
+        MetricDefinition(
+            key="cycle_count",
             name="Cycle count",
             values=cycle_counts,
             value_formatter=lambda value: f"{value:.1f}",
@@ -537,6 +699,7 @@ def main() -> None:
     cycle_length_notes = "No cycles observed across runs." if not cycle_lengths_all else None
     metrics_to_report.append(
         MetricDefinition(
+            key="cycle_length",
             name="Cycle length",
             values=cycle_lengths_all,
             value_formatter=lambda value: f"{value:.1f}",
@@ -550,9 +713,12 @@ def main() -> None:
         )
     )
 
+    aggregated_results_json: Dict[str, Any] = {}
+
     for metric in metrics_to_report:
         print()
         report_metric(metric)
+        aggregated_results_json[metric.key] = summarize_metric_for_json(metric)
 
     if total_rooms > 0:
         print()
@@ -581,6 +747,64 @@ def main() -> None:
                     avg_corridors=metrics["average_corridors_added"],
                 )
             )
+
+    aggregated_results_json["worst_case_run"] = {
+        "duration_seconds": json_safe_number(worst_duration),
+        "seed": worst_seed,
+        "run_id": worst_index + 1,
+    }
+
+    timestamp = datetime.datetime.utcnow()
+    iso_timestamp = timestamp.replace(microsecond=0).isoformat() + "Z"
+    filename_stamp = timestamp.strftime("%Y%m%dT%H%M%SZ")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    benchmarks_dir = os.path.abspath(os.path.join(script_dir, "..", "benchmarks"))
+    os.makedirs(benchmarks_dir, exist_ok=True)
+    output_path = os.path.join(
+        benchmarks_dir, f"benchmark-{filename_stamp}.json"
+    )
+
+    benchmark_run_info = {
+        "timestamp": iso_timestamp,
+        "git_commit_hash": commit_hash,
+        "run_description": run_description,
+        "num_iterations": args.runs,
+        "parameters": {
+            "seed": args.seed,
+            "min_diversity": args.min_diversity,
+            "room_completion_threshold_ratio": args.room_completion_threshold_ratio,
+            "area_coverage_threshold": args.area_coverage_threshold,
+            "cycle_count_threshold": args.cycle_count_threshold,
+            "cycle_length_threshold": args.cycle_length_threshold,
+        },
+    }
+
+    grower_summary_json = {
+        name: {
+            "invocations": int(metrics["invocations"]),
+            "total_time": json_safe_number(metrics["total_time"]),
+            "average_time": json_safe_number(metrics["average_time"]),
+            "average_rooms_added": json_safe_number(metrics["average_rooms_added"]),
+            "average_corridors_added": json_safe_number(metrics["average_corridors_added"]),
+            "total_rooms_added": json_safe_number(metrics["total_rooms_added"]),
+            "total_corridors_added": json_safe_number(metrics["total_corridors_added"]),
+        }
+        for name, metrics in sorted(grower_totals.items())
+    }
+
+    benchmark_data = {
+        "benchmark_run_info": benchmark_run_info,
+        "aggregated_results": aggregated_results_json,
+        "results": results_json,
+        "grower_summary": grower_summary_json,
+    }
+
+    with open(output_path, "w", encoding="utf-8") as handle:
+        json.dump(benchmark_data, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+    relative_output_path = os.path.relpath(output_path)
+    print(f"\nSaved benchmark results to {relative_output_path}")
 
 
 if __name__ == "__main__":
