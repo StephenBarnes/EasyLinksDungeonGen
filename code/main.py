@@ -16,7 +16,7 @@ def main() -> None:
             width=150,
             height=150,
             room_templates=prototype_room_templates,
-            direct_link_counts_probs={0: 0.55, 1: 0.25, 2: 0.15, 3: 0.05},
+            direct_link_counts_probs={0: 0.45, 1: 0.3, 2: 0.2, 3: 0.05},
             num_rooms_to_place=60,
             min_room_separation=1,
             min_intra_component_connection_distance=10,

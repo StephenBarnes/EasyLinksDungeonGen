@@ -1,6 +1,4 @@
-- Add RoomKind.DIRECT_LINKED, and only use those for directly-linked rooms created by the initial_tree.py grower. (Root rooms should still use STANDALONE, DIRECT_LINKED is only for the direct-linked rooms tacked on to the root room.)
-	- Also add direct_linked_weight analogous to existing weights. The existing fields like root_weight_middle (or edge or intermediate) should not apply to the choice of a direct-linked room.
-- Add first_root_weight field to rooms, applied only to the first root room created by the initial tree grower.
+- Place first root room in a smaller rectangle, say only in the central 30% of the map along each dimension. Add a DungeonConfig field for this 30% value. Also adjust the _categorize_side_distance function in initial tree grower to adjust for the smaller size.
 
 - Instead of setting direction preference when creating each RoomTemplate, rather automatically infer it by checking which sides have door-ports on them. Eg the 90-degree bend templates should avoid having either door port facing map edge.
 
@@ -17,8 +15,6 @@
 - Test that the code limiting growers to considering new rooms and corridors only is actually working.
 
 - Use different connection-distance thresholds for different growers.
-
-- Place first root room in a smaller rectangle, say only in the central 30% of the map along each dimension. Add a DungeonConfig field for this 30% value. Also adjust the _categorize_side_distance function in initial tree grower to adjust for the smaller size.
 
 - For rooms with only 1 connected port at the end, implement a contraction step where we try to move them inward and shorten the corridor.
 

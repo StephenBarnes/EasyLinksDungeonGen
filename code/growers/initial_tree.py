@@ -47,13 +47,17 @@ class InitialTreeHelper:
         self.config = context.config
         self.layout = context.layout
         self.room_templates_by_kind = context.room_templates_by_kind
-        self._standalone_templates = list(context.get_room_templates(RoomKind.STANDALONE))
+        self._root_templates = list(context.get_room_templates(RoomKind.ROOT))
+        self._first_root_templates = list(context.get_room_templates(RoomKind.FIRST_ROOT))
         self._direct_linked_templates = list(context.get_room_templates(RoomKind.DIRECT_LINKED))
+
+        if not self._first_root_templates:
+            raise ValueError("Initial tree growth requires first-root room templates")
+        if not self._root_templates:
+            raise ValueError("Initial tree growth requires root room templates")
         if not self._direct_linked_templates:
-            # Fall back to standalone templates if none are explicitly marked for direct links yet.
-            self._direct_linked_templates = list(self._standalone_templates)
-        if not self._standalone_templates:
-            raise ValueError("Initial tree growth requires standalone room templates")
+            # Fall back to root templates if none are explicitly marked for direct links yet.
+            self._direct_linked_templates = list(self._root_templates)
 
         self._target_rooms = self.config.num_rooms_to_place
         self._pending_ports: Deque[Tuple[int, int]] = deque()
@@ -190,27 +194,30 @@ class InitialTreeHelper:
         return None
 
     def _pick_root_template(self, placement_category: str, *, first_root: bool = False) -> RoomTemplate:
-        if placement_category == "middle":
-            base_weights = [rt.root_weight_middle for rt in self._standalone_templates]
-        elif placement_category == "edge":
-            base_weights = [rt.root_weight_edge for rt in self._standalone_templates]
+        templates: Sequence[RoomTemplate]
+        if first_root:
+            templates = self._first_root_templates
         else:
-            base_weights = [rt.root_weight_intermediate for rt in self._standalone_templates]
+            templates = self._root_templates
+
+        if placement_category == "middle":
+            base_weights = [rt.root_weight_middle for rt in templates]
+        elif placement_category == "edge":
+            base_weights = [rt.root_weight_edge for rt in templates]
+        else:
+            base_weights = [rt.root_weight_intermediate for rt in templates]
 
         if first_root:
-            weights = [rt.first_root_weight * weight for rt, weight in zip(self._standalone_templates, base_weights)]
+            weights = [rt.first_root_weight * weight for rt, weight in zip(templates, base_weights)]
             if not any(weight > 0 for weight in weights):
-                weights = [rt.first_root_weight for rt in self._standalone_templates]
-            if not any(weight > 0 for weight in weights):
-                weights = [1.0 for _ in self._standalone_templates]
-            return random.choices(self._standalone_templates, weights=weights)[0]
-
-        weights = base_weights
+                weights = [rt.first_root_weight for rt in templates]
+        else:
+            weights = base_weights
 
         if not any(weight > 0 for weight in weights):
-            weights = [1.0 for _ in self._standalone_templates]
+            weights = [1.0 for _ in templates]
 
-        return random.choices(self._standalone_templates, weights=weights)[0]
+        return random.choices(templates, weights=weights)[0]
 
     def _plan_corridor_expansion(
         self,
@@ -222,7 +229,7 @@ class InitialTreeHelper:
         direction = anchor_port.direction.opposite()
         width_options = list(anchor_port.widths)
         random.shuffle(width_options)
-        templates = list(self._standalone_templates)
+        templates = list(self._root_templates)
         random.shuffle(templates)
 
         for width in width_options:
@@ -230,7 +237,7 @@ class InitialTreeHelper:
                 if len(anchor_room.template.ports) == 1 and len(template.ports) == 1:
                     continue
                 if (
-                    len(self._standalone_templates) > 1
+                    len(self._root_templates) > 1
                     and anchor_room.template.name == template.name
                 ):
                     continue
