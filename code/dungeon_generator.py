@@ -15,9 +15,9 @@ from growers import (
     run_bent_room_to_corridor_grower,
     run_through_corridor_grower,
     run_rotate_rooms_grower,
+    run_initial_tree_grower,
 )
 from dungeon_layout import DungeonLayout
-from root_room_placer import RootRoomPlacer
 from metrics import GenerationMetrics
 
 
@@ -36,12 +36,6 @@ class DungeonGenerator:
         for template in self.room_templates:
             for kind in template.kinds:
                 self.room_templates_by_kind[kind].append(template)
-
-        self.root_room_placer = RootRoomPlacer(
-            config=self.config,
-            layout=self.layout,
-            room_templates_by_kind=self.room_templates_by_kind,
-        )
 
     def _run_grower(
         self,
@@ -73,17 +67,17 @@ class DungeonGenerator:
         """Generates the dungeon, by invoking dungeon-growers."""
         # Note: This function is incomplete. Currently it runs our implemented growers in a fairly arbitrary order, mostly for testing. The final version will have more growers, and will include step 3 (counting components, deleting smaller components, and accepting or rejecting the final connected dungeon map).
 
-        # Step 1: Place rooms, some with direct links
-        self.root_room_placer.place_rooms()
-        if not self.layout.placed_rooms:
-            raise ValueError("ERROR: no placed rooms.")
-
         context = GrowerContext(
             config=self.config,
             layout=self.layout,
             room_templates=self.room_templates,
             room_templates_by_kind=self.room_templates_by_kind,
         )
+
+        # Step 1: Place rooms, some with direct links, using the initial-tree grower
+        self._run_grower("initial_tree", run_initial_tree_grower, context)
+        if not self.layout.placed_rooms:
+            raise ValueError("ERROR: no placed rooms.")
 
         # Step 2: Run our growers repeatedly. Re-run simpler rules until they terminate.
         def run_connection_growers() -> int:

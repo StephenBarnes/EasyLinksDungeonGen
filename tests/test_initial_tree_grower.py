@@ -5,14 +5,30 @@ import pytest
 from dungeon_config import CorridorLengthDistribution, DungeonConfig
 from dungeon_layout import DungeonLayout
 from geometry import Direction, Rotation
+from grower_context import GrowerContext
+from growers.initial_tree import (
+    InitialTreeHelper,
+    categorize_side_distance,
+    run_initial_tree_grower,
+)
 from models import RoomKind
-from root_room_placer import RootRoomPlacer
 
 
 @pytest.fixture
-def root_room_placer(dungeon_config, dungeon_layout, standalone_template):
-    room_templates_by_kind = {RoomKind.STANDALONE: [standalone_template]}
-    return RootRoomPlacer(dungeon_config, dungeon_layout, room_templates_by_kind)
+def tree_context(dungeon_config: DungeonConfig, dungeon_layout: DungeonLayout, standalone_template):
+    room_templates = [standalone_template]
+    room_templates_by_kind = {RoomKind.STANDALONE: room_templates}
+    return GrowerContext(
+        config=dungeon_config,
+        layout=dungeon_layout,
+        room_templates=room_templates,
+        room_templates_by_kind=room_templates_by_kind,
+    )
+
+
+@pytest.fixture
+def initial_tree_helper(tree_context: GrowerContext) -> InitialTreeHelper:
+    return InitialTreeHelper(tree_context)
 
 
 @pytest.mark.parametrize(
@@ -24,13 +40,13 @@ def root_room_placer(dungeon_config, dungeon_layout, standalone_template):
         (5, 0, "far"),
     ],
 )
-def test_categorize_side_distance(distance, span, expected, root_room_placer):
-    assert root_room_placer._categorize_side_distance(distance, span) == expected
+def test_categorize_side_distance(distance, span, expected):
+    assert categorize_side_distance(distance, span) == expected
 
 
-def test_describe_macro_position_classifies_edge_and_middle(root_room_placer):
-    category_edge, proximities_edge = root_room_placer._describe_macro_position(4, 36)
-    category_middle, proximities_middle = root_room_placer._describe_macro_position(20, 20)
+def test_describe_macro_position_classifies_edge_and_middle(initial_tree_helper: InitialTreeHelper):
+    category_edge, proximities_edge = initial_tree_helper._describe_macro_position(4, 36)
+    category_middle, proximities_middle = initial_tree_helper._describe_macro_position(20, 20)
 
     assert category_edge == "edge"
     assert proximities_edge["left"] == "close"
@@ -39,63 +55,71 @@ def test_describe_macro_position_classifies_edge_and_middle(root_room_placer):
     assert all(value == "far" for value in proximities_middle.values())
 
 
-def test_select_root_rotation_prefers_inward_direction(root_room_placer, standalone_template):
+def test_select_root_rotation_prefers_inward_direction(
+    initial_tree_helper: InitialTreeHelper, standalone_template
+):
     template = standalone_template
     template.preferred_center_facing_dir = Direction.NORTH
     placement_category = "edge"
     side_proximities = {"left": "close", "right": "far", "top": "far", "bottom": "far"}
 
-    rotation = root_room_placer._select_root_rotation(template, placement_category, side_proximities)
+    rotation = initial_tree_helper._select_root_rotation(
+        template, placement_category, side_proximities
+    )
 
     assert rotation is Rotation.DEG_270
 
 
-def test_select_root_rotation_falls_back_to_random(root_room_placer, monkeypatch, standalone_template):
+def test_select_root_rotation_falls_back_to_random(
+    initial_tree_helper: InitialTreeHelper, monkeypatch, standalone_template
+):
     template = standalone_template
     template.preferred_center_facing_dir = None
     chosen_rotation = Rotation.DEG_180
 
     monkeypatch.setattr(Rotation, "random", staticmethod(lambda: chosen_rotation))
 
-    rotation = root_room_placer._select_root_rotation(template, "edge", {"left": "close"})
+    rotation = initial_tree_helper._select_root_rotation(template, "edge", {"left": "close"})
 
     assert rotation is chosen_rotation
 
 
-def test_build_root_room_candidate_aligns_using_macro_offsets(root_room_placer, monkeypatch, standalone_template):
+def test_build_root_room_candidate_aligns_using_macro_offsets(
+    initial_tree_helper: InitialTreeHelper, monkeypatch, standalone_template
+):
     template = standalone_template
     rotation = Rotation.DEG_0
     macro_x, macro_y = 12, 16
-    # Always pick the north-facing port so direction is predictable.
     monkeypatch.setattr(random, "randrange", lambda _: 0)
 
-    candidate = root_room_placer._build_root_room_candidate(template, rotation, macro_x, macro_y)
+    candidate = initial_tree_helper._build_root_room_candidate(template, rotation, macro_x, macro_y)
 
-    assert candidate.x % root_room_placer.config.macro_grid_size == 0
-    assert candidate.y % root_room_placer.config.macro_grid_size == 0
+    config = initial_tree_helper.config
+    assert candidate.x % config.macro_grid_size == 0
+    assert candidate.y % config.macro_grid_size == 0
 
 
-def test_place_rooms_creates_single_component(root_room_placer):
+def test_run_initial_tree_creates_single_component(tree_context: GrowerContext):
     random.seed(12345)
-    root_room_placer.place_rooms()
+    run_initial_tree_grower(tree_context)
 
-    component_sizes = root_room_placer.layout.get_component_sizes()
+    component_sizes = tree_context.layout.get_component_sizes()
     assert len(component_sizes) == 1
     component_id = next(iter(component_sizes))
-    layout = root_room_placer.layout
+    layout = tree_context.layout
     assert len(layout.placed_rooms) >= 1
     assert all(room.component_id == component_id for room in layout.placed_rooms)
     assert all(corridor.component_id == component_id for corridor in layout.corridors)
 
 
-def test_corridor_length_distribution_within_bounds(root_room_placer):
-    dist = root_room_placer.config.initial_corridor_length
+def test_corridor_length_distribution_within_bounds(tree_context: GrowerContext):
+    dist = tree_context.config.initial_corridor_length
     for _ in range(20):
         value = dist.sample()
         assert dist.min_length <= value <= dist.max_length
 
 
-def test_place_rooms_spawns_corridor_when_possible(standalone_template):
+def test_run_initial_tree_spawns_corridor_when_possible(standalone_template):
     state = random.getstate()
     try:
         random.seed(4242)
@@ -121,13 +145,15 @@ def test_place_rooms_spawns_corridor_when_possible(standalone_template):
             ),
         )
         layout = DungeonLayout(config)
-        placer = RootRoomPlacer(
-            config,
-            layout,
-            {RoomKind.STANDALONE: [standalone_template]},
+        room_templates = [standalone_template]
+        context = GrowerContext(
+            config=config,
+            layout=layout,
+            room_templates=room_templates,
+            room_templates_by_kind={RoomKind.STANDALONE: room_templates},
         )
 
-        placer.place_rooms()
+        run_initial_tree_grower(context)
 
         assert len(layout.corridors) >= 1
         assert len(layout.room_corridor_links) >= 2

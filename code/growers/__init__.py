@@ -1,3 +1,4 @@
+from .initial_tree import run_initial_tree_grower
 from .room_to_room import run_room_to_room_grower
 from .room_to_corridor import run_room_to_corridor_grower
 from .bent_room_to_room import run_bent_room_to_room_grower
@@ -14,4 +15,5 @@ __all__ = [
     "run_bent_room_to_corridor_grower",
     "run_through_corridor_grower",
     "run_rotate_rooms_grower",
+    "run_initial_tree_grower",
 ]

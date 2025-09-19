@@ -1,4 +1,4 @@
-"""Utilities for populating a fresh layout with the initial set of rooms."""
+"""Initial tree grower responsible for seeding the dungeon layout."""
 
 from __future__ import annotations
 
@@ -6,13 +6,27 @@ import math
 import random
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from dungeon_config import DungeonConfig
-from dungeon_layout import DungeonLayout
-from geometry import Direction, Rotation, TilePos, rotate_direction, VALID_ROTATIONS
+from geometry import Direction, Rotation, TilePos, VALID_ROTATIONS, rotate_direction
 from grower_context import GrowerContext
+from growers.base import (
+    CandidateDependencies,
+    CandidateFinder,
+    DungeonGrower,
+    GeometryPlanner,
+    GrowerApplier,
+    GrowerStepResult,
+)
 from models import Corridor, CorridorGeometry, PlacedRoom, RoomKind, RoomTemplate, WorldPort
+
+
+@dataclass(frozen=True)
+class InitialTreeCandidate:
+    """Candidate describing an available port on the current tree."""
+
+    room_idx: int
+    port_idx: int
 
 
 @dataclass
@@ -25,66 +39,145 @@ class CorridorExpansionPlan:
     width: int
 
 
-class RootRoomPlacer:
-    """Populate an empty layout with root rooms and their direct links."""
+class InitialTreeHelper:
+    """Helper that encapsulates shared logic for the initial tree grower."""
 
-    def __init__(
-        self,
-        config: DungeonConfig,
-        layout: DungeonLayout,
-        room_templates_by_kind: Mapping[RoomKind, Sequence[RoomTemplate]],
-    ) -> None:
-        self.config = config
-        self.layout = layout
-        self.room_templates_by_kind = room_templates_by_kind
-        self._standalone_templates = list(room_templates_by_kind.get(RoomKind.STANDALONE, ()))
+    def __init__(self, context: GrowerContext) -> None:
+        self.context = context
+        self.config = context.config
+        self.layout = context.layout
+        self.room_templates_by_kind = context.room_templates_by_kind
+        self._standalone_templates = list(context.get_room_templates(RoomKind.STANDALONE))
         if not self._standalone_templates:
-            raise ValueError("Root room placement requires standalone room templates")
-        all_templates: List[RoomTemplate] = []
-        for templates in room_templates_by_kind.values():
-            for template in templates:
-                if template not in all_templates:
-                    all_templates.append(template)
-        self._all_templates: Tuple[RoomTemplate, ...] = tuple(all_templates)
-        self._grower_context = GrowerContext(
-            config=self.config,
-            layout=self.layout,
-            room_templates=self._all_templates,
-            room_templates_by_kind=self.room_templates_by_kind,
-        )
-        self._corridor_length_distribution = self.config.initial_corridor_length
+            raise ValueError("Initial tree growth requires standalone room templates")
 
-    def place_rooms(self) -> None:
-        """Build a single connected component by growing corridors from unused ports."""
-        target = self.config.num_rooms_to_place
-        print(f"Attempting to place {target} rooms using corridor-driven growth...")
+        self._target_rooms = self.config.num_rooms_to_place
+        self._pending_ports: Deque[Tuple[int, int]] = deque()
+        self._processed_ports: Set[Tuple[int, int]] = set()
+        self._rooms_created = 0
+        self._root_component_id: Optional[int] = None
 
-        root_room = self._place_initial_root()
-        if root_room is None:
-            raise ValueError("ERROR: failed to place initial root room.")
+    # ------------------------------------------------------------------
+    # Public lifecycle helpers
+    # ------------------------------------------------------------------
+    def initialize(self) -> None:
+        """Ensure at least one root room exists and seed the candidate queue."""
+        if not self.layout.placed_rooms:
+            root_room = self._place_initial_root()
+            if root_room is None:
+                raise ValueError("ERROR: failed to place initial root room.")
+            initial_children = self._spawn_direct_links_recursive(root_room)
+            self._root_component_id = self.layout.normalize_room_component(root_room.index)
+            rooms_to_seed = [root_room, *initial_children]
+        else:
+            rooms_to_seed = list(self.layout.placed_rooms)
+            self._root_component_id = self.layout.normalize_room_component(
+                rooms_to_seed[0].index
+            )
 
-        initial_children = self._spawn_direct_links_recursive(root_room)
-        processed_ports: Set[Tuple[int, int]] = set()
-        port_queue: Deque[Tuple[int, int]] = deque()
-        self._enqueue_available_ports(port_queue, [root_room, *initial_children])
+        self.enqueue_rooms(rooms_to_seed)
 
-        while len(self.layout.placed_rooms) < target and port_queue:
-            room_idx, port_idx = port_queue.popleft()
-            if (room_idx, port_idx) in processed_ports:
+    def enqueue_rooms(self, rooms: Iterable[PlacedRoom]) -> None:
+        for room in rooms:
+            if room.index < 0:
                 continue
-            processed_ports.add((room_idx, port_idx))
+            for port_idx in room.get_available_port_indices():
+                self._pending_ports.append((room.index, port_idx))
 
-            room = self.layout.placed_rooms[room_idx]
+    # ------------------------------------------------------------------
+    # Candidate iteration
+    # ------------------------------------------------------------------
+    def iter_candidates(self, context: GrowerContext) -> Iterable[InitialTreeCandidate]:
+        while self._pending_ports and self.can_grow_more():
+            room_idx, port_idx = self._pending_ports.popleft()
+            key = (room_idx, port_idx)
+            if key in self._processed_ports:
+                continue
+            room = context.layout.placed_rooms[room_idx]
             if port_idx in room.connected_port_indices:
                 continue
-
-            new_rooms = self._attempt_expand_via_corridor(room_idx, port_idx)
-            if not new_rooms:
+            if self._root_component_id is not None and room.component_id != self._root_component_id:
                 continue
-            self._enqueue_available_ports(port_queue, new_rooms)
+            self._processed_ports.add(key)
+            yield InitialTreeCandidate(room_idx=room_idx, port_idx=port_idx)
 
-        print(f"Successfully placed {len(self.layout.placed_rooms)} rooms.")
+    def can_grow_more(self) -> bool:
+        return len(self.layout.placed_rooms) < self._target_rooms
 
+    # ------------------------------------------------------------------
+    # Corridor planning and application
+    # ------------------------------------------------------------------
+    def plan_corridor(self, candidate: InitialTreeCandidate) -> Optional[CorridorExpansionPlan]:
+        if not self.can_grow_more():
+            return None
+
+        anchor_room = self.layout.placed_rooms[candidate.room_idx]
+        anchor_ports = anchor_room.get_world_ports()
+        if candidate.port_idx >= len(anchor_ports):
+            return None
+        anchor_port = anchor_ports[candidate.port_idx]
+        if not anchor_port.widths:
+            return None
+
+        max_attempts = self.config.max_connected_placement_attempts
+        for _ in range(max_attempts):
+            corridor_length = self.config.initial_corridor_length.sample()
+            if corridor_length <= 0:
+                continue
+            plan = self._plan_corridor_expansion(
+                anchor_room,
+                candidate.port_idx,
+                anchor_port,
+                corridor_length,
+            )
+            if plan is not None:
+                return plan
+        return None
+
+    def apply_plan(
+        self,
+        candidate: InitialTreeCandidate,
+        plan: CorridorExpansionPlan,
+    ) -> GrowerStepResult:
+        anchor_room = self.layout.placed_rooms[candidate.room_idx]
+        anchor_component = self.layout.normalize_room_component(anchor_room.index)
+
+        self.layout.register_room(plan.room, anchor_component)
+        plan.room.connected_port_indices.add(plan.room_port_index)
+        anchor_room.connected_port_indices.add(candidate.port_idx)
+
+        merged_component = self.layout.merge_components(
+            anchor_component, plan.room.component_id
+        )
+        self.layout.set_room_component(anchor_room.index, merged_component)
+        self.layout.set_room_component(plan.room.index, merged_component)
+        self._root_component_id = merged_component
+
+        corridor = Corridor(
+            room_a_index=anchor_room.index,
+            port_a_index=candidate.port_idx,
+            room_b_index=plan.room.index,
+            port_b_index=plan.room_port_index,
+            width=plan.width,
+            geometry=plan.geometry,
+        )
+        corridor_idx = self.layout.register_corridor(corridor, merged_component)
+        self.layout.set_corridor_component(corridor_idx, merged_component)
+
+        new_rooms = [plan.room]
+        new_rooms.extend(self._spawn_direct_links_recursive(plan.room))
+        self.enqueue_rooms(new_rooms)
+        self._rooms_created += len(new_rooms)
+
+        stop = not self.can_grow_more()
+        return GrowerStepResult(applied=True, stop=stop)
+
+    def finalize(self) -> int:
+        return self._rooms_created
+
+    # ------------------------------------------------------------------
+    # Internal helpers (mostly adapted from the original RootRoomPlacer)
+    # ------------------------------------------------------------------
     def _place_initial_root(self) -> Optional[PlacedRoom]:
         max_attempts = self.config.max_connected_placement_attempts
         max_fail_windows = self.config.max_consecutive_limit_failures
@@ -121,47 +214,6 @@ class RootRoomPlacer:
             weights = [1.0 for _ in self._standalone_templates]
 
         return random.choices(self._standalone_templates, weights=weights)[0]
-
-    def _enqueue_available_ports(
-        self, port_queue: Deque[Tuple[int, int]], rooms: Iterable[PlacedRoom]
-    ) -> None:
-        for room in rooms:
-            room_idx = room.index
-            if room_idx < 0:
-                continue
-            for port_idx in room.get_available_port_indices():
-                port_queue.append((room_idx, port_idx))
-
-    def _sample_corridor_length(self) -> int:
-        return self._corridor_length_distribution.sample()
-
-    def _attempt_expand_via_corridor(
-        self, room_idx: int, port_idx: int
-    ) -> Optional[List[PlacedRoom]]:
-        anchor_room = self.layout.placed_rooms[room_idx]
-        anchor_ports = anchor_room.get_world_ports()
-        if port_idx >= len(anchor_ports):
-            return None
-        anchor_port = anchor_ports[port_idx]
-        if not anchor_port.widths:
-            return None
-
-        max_attempts = self.config.max_connected_placement_attempts
-        for _ in range(max_attempts):
-            corridor_length = self._sample_corridor_length()
-            if corridor_length <= 0:
-                continue
-            plan = self._plan_corridor_expansion(
-                anchor_room,
-                port_idx,
-                anchor_port,
-                corridor_length,
-            )
-            if plan is None:
-                continue
-            return self._apply_corridor_plan(anchor_room, port_idx, plan)
-
-        return None
 
     def _plan_corridor_expansion(
         self,
@@ -208,7 +260,6 @@ class RootRoomPlacer:
                         )
                         if plan is not None:
                             return plan
-
         return None
 
     def _build_corridor_plan_for_template(
@@ -238,7 +289,7 @@ class RootRoomPlacer:
         temp_room_id = -(len(self.layout.placed_rooms) + 1)
         extra_room_tiles = self._build_extra_room_tiles(candidate_room, temp_room_id)
 
-        geometry = self._grower_context.build_corridor_geometry(
+        geometry = self.context.build_corridor_geometry(
             anchor_room.index,
             anchor_port,
             temp_room_id,
@@ -250,10 +301,8 @@ class RootRoomPlacer:
             return None
 
         axis_index = geometry.axis_index
-        exit_anchor = self._grower_context.port_exit_axis_value(anchor_port, axis_index)
-        exit_candidate = self._grower_context.port_exit_axis_value(
-            candidate_world_port, axis_index
-        )
+        exit_anchor = self.context.port_exit_axis_value(anchor_port, axis_index)
+        exit_candidate = self.context.port_exit_axis_value(candidate_world_port, axis_index)
         actual_length = abs(exit_candidate - exit_anchor)
         min_expected = max(1, corridor_length // 2)
         if actual_length < min_expected:
@@ -292,9 +341,7 @@ class RootRoomPlacer:
             return None
         cross_coord = int(round(cross_delta))
 
-        exit_anchor = self._grower_context.port_exit_axis_value(
-            anchor_port, axis_index
-        )
+        exit_anchor = self.context.port_exit_axis_value(anchor_port, axis_index)
         target_exit = exit_anchor + direction_step * corridor_length
 
         tile_coords = [
@@ -322,37 +369,6 @@ class RootRoomPlacer:
             for tx in range(bounds.x, bounds.max_x):
                 tiles[TilePos(tx, ty)] = placeholder
         return tiles
-
-    def _apply_corridor_plan(
-        self,
-        anchor_room: PlacedRoom,
-        anchor_port_idx: int,
-        plan: CorridorExpansionPlan,
-    ) -> List[PlacedRoom]:
-        anchor_component = self.layout.normalize_room_component(anchor_room.index)
-        self.layout.register_room(plan.room, anchor_component)
-        plan.room.connected_port_indices.add(plan.room_port_index)
-        anchor_room.connected_port_indices.add(anchor_port_idx)
-
-        merged_component = self.layout.merge_components(
-            anchor_component, plan.room.component_id
-        )
-        self.layout.set_room_component(anchor_room.index, merged_component)
-        self.layout.set_room_component(plan.room.index, merged_component)
-        corridor = Corridor(
-            room_a_index=anchor_room.index,
-            port_a_index=anchor_port_idx,
-            room_b_index=plan.room.index,
-            port_b_index=plan.room_port_index,
-            width=plan.width,
-            geometry=plan.geometry,
-        )
-        corridor_idx = self.layout.register_corridor(corridor, merged_component)
-        self.layout.set_corridor_component(corridor_idx, merged_component)
-
-        new_rooms = [plan.room]
-        new_rooms.extend(self._spawn_direct_links_recursive(plan.room))
-        return new_rooms
 
     def _random_macro_grid_point(self) -> Tuple[int, int]:
         max_macro_x = (self.config.width // self.config.macro_grid_size) - 1
@@ -468,7 +484,9 @@ class RootRoomPlacer:
         anchor_world_ports = anchor_room.get_world_ports()
         available_anchor_indices = anchor_room.get_available_port_indices()
         random.shuffle(available_anchor_indices)
-        standalone_templates = self.room_templates_by_kind.get(RoomKind.STANDALONE, ())
+        standalone_templates: Sequence[RoomTemplate] = self.room_templates_by_kind.get(
+            RoomKind.STANDALONE, ()
+        )
 
         for anchor_idx in available_anchor_indices:
             awp = anchor_world_ports[anchor_idx]
@@ -481,10 +499,8 @@ class RootRoomPlacer:
                     standalone_templates,
                     weights=[rt.direct_weight for rt in standalone_templates],
                 )[0]
-                # Special case: don't place a 1-door room directly linked to a 1-door room because we won't be able to connect them to the rest of the dungeon.
                 if len(anchor_room.template.ports) == 1 and len(template.ports) == 1:
                     continue
-                # Don't place the same room directly connected, to increase diversity of room types.
                 if anchor_room.template.name == template.name:
                     continue
                 rotation = Rotation.random()
@@ -520,3 +536,65 @@ class RootRoomPlacer:
                 new_rooms.append(child)
                 new_rooms.extend(self._spawn_direct_links_recursive(child))
         return new_rooms
+
+
+class InitialTreeCandidateFinder(
+    CandidateFinder[InitialTreeCandidate, CorridorExpansionPlan]
+):
+    def __init__(self, helper: InitialTreeHelper) -> None:
+        self.helper = helper
+
+    def find_candidates(self, context: GrowerContext):
+        return self.helper.iter_candidates(context)
+
+    def dependencies(
+        self, context: GrowerContext, candidate: InitialTreeCandidate
+    ) -> CandidateDependencies:
+        return CandidateDependencies.from_iterables(rooms=(candidate.room_idx,))
+
+
+class InitialTreeGeometryPlanner(
+    GeometryPlanner[InitialTreeCandidate, CorridorExpansionPlan]
+):
+    def __init__(self, helper: InitialTreeHelper) -> None:
+        self.helper = helper
+
+    def plan(
+        self, context: GrowerContext, candidate: InitialTreeCandidate
+    ) -> Optional[CorridorExpansionPlan]:
+        return self.helper.plan_corridor(candidate)
+
+
+class InitialTreeApplier(GrowerApplier[InitialTreeCandidate, CorridorExpansionPlan]):
+    def __init__(self, helper: InitialTreeHelper) -> None:
+        self.helper = helper
+
+    def apply(
+        self,
+        context: GrowerContext,
+        candidate: InitialTreeCandidate,
+        plan: CorridorExpansionPlan,
+    ) -> GrowerStepResult:
+        return self.helper.apply_plan(candidate, plan)
+
+    def finalize(self, context: GrowerContext) -> int:
+        return self.helper.finalize()
+
+
+def run_initial_tree_grower(context: GrowerContext) -> int:
+    """Entry point that seeds the dungeon layout and grows the initial tree."""
+
+    helper = InitialTreeHelper(context)
+    helper.initialize()
+
+    grower = DungeonGrower(
+        name="initial_tree",
+        candidate_finder=InitialTreeCandidateFinder(helper),
+        geometry_planner=InitialTreeGeometryPlanner(helper),
+        applier=InitialTreeApplier(helper),
+    )
+    return grower.run(context)
+
+
+# Re-export selected helpers for unit tests.
+categorize_side_distance = InitialTreeHelper._categorize_side_distance
