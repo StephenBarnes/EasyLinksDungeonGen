@@ -19,6 +19,8 @@ import time
 from typing import Any, Callable, Dict, List
 
 import networkx as nx
+from networkx.algorithms import community as nx_comm
+from networkx.algorithms.community import quality as nx_comm_quality
 
 from dungeon_config import DungeonConfig, CorridorLengthDistribution
 from dungeon_generator import DungeonGenerator
@@ -49,6 +51,20 @@ DEFAULT_ROOM_COMPLETION_THRESHOLD_RATIO = 0.8
 DEFAULT_AREA_COVERAGE_THRESHOLD = 0.2
 DEFAULT_CYCLE_COUNT_THRESHOLD = 1
 DEFAULT_CYCLE_LENGTH_THRESHOLD = 5
+DEFAULT_GENERATION_TIME_THRESHOLD = 1.0
+DEFAULT_CORRIDOR_COUNT_THRESHOLD = 40.0
+DEFAULT_GRAPH_DIAMETER_THRESHOLD = 10.0
+DEFAULT_GRAPH_RADIUS_THRESHOLD = 5.0
+DEFAULT_ARTICULATION_POINT_THRESHOLD = 1.0
+DEFAULT_BRIDGE_COUNT_THRESHOLD = 1.0
+DEFAULT_AVERAGE_SHORTEST_PATH_THRESHOLD = 8.0
+DEFAULT_DEAD_END_THRESHOLD = 8.0
+DEFAULT_CYCLOMATIC_COMPLEXITY_THRESHOLD = 5.0
+DEFAULT_GRAPH_DENSITY_THRESHOLD = 0.05
+DEFAULT_DEGREE_P20_THRESHOLD = 2.0
+DEFAULT_DEGREE_P50_THRESHOLD = 3.0
+DEFAULT_DEGREE_P80_THRESHOLD = 4.0
+DEFAULT_LOUVAIN_MODULARITY_THRESHOLD = 0.30
 
 PERCENTILES = [1.0, 5.0] + [float(value) for value in range(10, 100, 5)] + [99.0]
 
@@ -73,8 +89,18 @@ class GenerationRunResult:
     bounding_box_area_fraction: float
     cycle_count: int
     cycle_lengths: List[int]
-    largest_component_fraction: float
     graph_diameter: int
+    graph_radius: float
+    articulation_points: int
+    bridge_count: int
+    average_shortest_path_length: float
+    dead_end_count: int
+    cyclomatic_complexity: float
+    graph_density: float
+    degree_p20: float
+    degree_p50: float
+    degree_p80: float
+    louvain_modularity: float
     template_counts: Counter[str]
     grower_metrics: Dict[str, Dict[str, float | int]]
 
@@ -197,6 +223,10 @@ def report_metric(definition: MetricDefinition) -> None:
             stdev=stdev,
         )
     )
+
+    p10 = format_value(percentile(values, 10.0), definition.value_formatter)
+    p90 = format_value(percentile(values, 90.0), definition.value_formatter)
+    print(f"  p10 {p10}, p90 {p90}")
 
     percentile_parts = []
     for pct, value in collected_percentiles(values):
@@ -343,20 +373,74 @@ def run_single_generation(seed: int, room_completion_ratio: float) -> Generation
     cycle_lengths = [len(cycle) for cycle in basis]
     cycle_count = len(cycle_lengths)
 
-    largest_component_fraction = 0.0
     graph_diameter = 0
-    if total_rooms > 0 and graph.number_of_nodes() > 0:
+    graph_radius = 0.0
+    articulation_points = 0
+    bridge_count = 0
+    average_shortest_path_length = 0.0
+    dead_end_count = 0
+    cyclomatic_complexity = 0.0
+    graph_density = 0.0
+    degree_p20 = 0.0
+    degree_p50 = 0.0
+    degree_p80 = 0.0
+    louvain_modularity = 0.0
+
+    num_nodes = graph.number_of_nodes()
+    num_edges = graph.number_of_edges()
+    if total_rooms > 0 and num_nodes > 0:
         components = list(nx.connected_components(graph))
-        if components:
+        component_count = len(components)
+        target_graph = graph
+        if components and component_count > 1:
             largest_component_nodes = max(components, key=len)
-            largest_size = len(largest_component_nodes)
-            largest_component_fraction = largest_size / total_rooms if total_rooms else 0.0
-            if largest_size >= 2:
-                subgraph = graph.subgraph(largest_component_nodes).copy()
+            target_graph = graph.subgraph(largest_component_nodes).copy()
+        cyclomatic_complexity = float(num_edges - num_nodes + component_count)
+        graph_density = float(nx.density(graph))
+
+        try:
+            articulation_points = sum(1 for _ in nx.articulation_points(target_graph))
+        except nx.NetworkXError:
+            articulation_points = 0
+
+        try:
+            bridge_count = sum(1 for _ in nx.bridges(target_graph))
+        except nx.NetworkXError:
+            bridge_count = 0
+
+        degrees = [float(degree) for _, degree in target_graph.degree()] # type: ignore
+        dead_end_count = sum(1 for degree in degrees if degree == 1)
+        if degrees:
+            degree_p20 = percentile(degrees, 20.0)
+            degree_p50 = percentile(degrees, 50.0)
+            degree_p80 = percentile(degrees, 80.0)
+
+        if target_graph.number_of_nodes() >= 1:
+            try:
+                graph_diameter = int(nx.diameter(target_graph)) if target_graph.number_of_nodes() > 1 else 0
+            except nx.NetworkXError:
+                graph_diameter = 0
+
+            try:
+                graph_radius = float(nx.radius(target_graph)) if target_graph.number_of_nodes() > 1 else 0.0
+            except nx.NetworkXError:
+                graph_radius = 0.0
+
+            try:
+                average_shortest_path_length = (
+                    float(nx.average_shortest_path_length(target_graph))
+                    if target_graph.number_of_nodes() > 1
+                    else 0.0
+                )
+            except (nx.NetworkXError, ZeroDivisionError):
+                average_shortest_path_length = 0.0
+
+            if target_graph.number_of_edges() > 0 and target_graph.number_of_nodes() > 1:
                 try:
-                    graph_diameter = int(nx.diameter(subgraph))
-                except nx.NetworkXError:
-                    graph_diameter = 0
+                    communities = nx_comm.louvain_communities(target_graph, seed=seed)
+                    louvain_modularity = float(nx_comm_quality.modularity(target_graph, communities))
+                except (AttributeError, ZeroDivisionError, nx.NetworkXError, TypeError, ValueError):
+                    louvain_modularity = 0.0
 
     template_counts: Counter[str] = Counter(
         room.template.name for room in layout.placed_rooms
@@ -381,8 +465,18 @@ def run_single_generation(seed: int, room_completion_ratio: float) -> Generation
         bounding_box_area_fraction=bbox_fraction,
         cycle_count=cycle_count,
         cycle_lengths=cycle_lengths,
-        largest_component_fraction=largest_component_fraction,
         graph_diameter=graph_diameter,
+        graph_radius=graph_radius,
+        articulation_points=articulation_points,
+        bridge_count=bridge_count,
+        average_shortest_path_length=average_shortest_path_length,
+        dead_end_count=dead_end_count,
+        cyclomatic_complexity=cyclomatic_complexity,
+        graph_density=graph_density,
+        degree_p20=degree_p20,
+        degree_p50=degree_p50,
+        degree_p80=degree_p80,
+        louvain_modularity=louvain_modularity,
         template_counts=template_counts,
         grower_metrics=grower_metrics,
     )
@@ -553,8 +647,18 @@ def main() -> None:
     cycle_lengths_all = [float(length) for result in results for length in result.cycle_lengths]
 
     diversity_scores = [r.diversity_score for r in results]
-    largest_component_fractions = [r.largest_component_fraction for r in results]
     graph_diameters = [float(r.graph_diameter) for r in results]
+    graph_radii = [float(r.graph_radius) for r in results]
+    articulation_counts = [float(r.articulation_points) for r in results]
+    bridge_counts = [float(r.bridge_count) for r in results]
+    average_shortest_paths = [r.average_shortest_path_length for r in results]
+    dead_end_counts = [float(r.dead_end_count) for r in results]
+    cyclomatic_complexities = [r.cyclomatic_complexity for r in results]
+    graph_densities = [r.graph_density for r in results]
+    degree_p20_values = [r.degree_p20 for r in results]
+    degree_p50_values = [r.degree_p50 for r in results]
+    degree_p80_values = [r.degree_p80 for r in results]
+    louvain_modularities = [r.louvain_modularity for r in results]
 
     results_json: List[Dict[str, Any]] = []
 
@@ -588,6 +692,38 @@ def main() -> None:
                 lengths=cycle_lengths_display,
             )
         )
+        print(
+            "  graph diameter {diameter}, radius {radius}, avg shortest path {avg_path},"
+            " density {density}, cyclomatic {cyclomatic}".format(
+                diameter=format_value(float(result.graph_diameter), lambda value: f"{value:.0f}"),
+                radius=format_value(result.graph_radius, lambda value: f"{value:.0f}"),
+                avg_path=format_value(
+                    result.average_shortest_path_length, lambda value: f"{value:.2f}"
+                ),
+                density=format_value(result.graph_density, lambda value: f"{value:.3f}"),
+                cyclomatic=format_value(
+                    result.cyclomatic_complexity, lambda value: f"{value:.2f}"
+                ),
+            )
+        )
+        print(
+            "  articulation {articulation}, bridges {bridges}, dead ends {dead_ends},"
+            " degree p20 {p20}, p50 {p50}, p80 {p80}, louvain modularity {modularity}".format(
+                articulation=format_value(
+                    float(result.articulation_points), lambda value: f"{value:.0f}"
+                ),
+                bridges=format_value(float(result.bridge_count), lambda value: f"{value:.0f}"),
+                dead_ends=format_value(
+                    float(result.dead_end_count), lambda value: f"{value:.0f}"
+                ),
+                p20=format_value(result.degree_p20, lambda value: f"{value:.1f}"),
+                p50=format_value(result.degree_p50, lambda value: f"{value:.1f}"),
+                p80=format_value(result.degree_p80, lambda value: f"{value:.1f}"),
+                modularity=format_value(
+                    result.louvain_modularity, lambda value: f"{value:.3f}"
+                ),
+            )
+        )
 
         grower_times = {
             name: float(metrics.get("total_time", 0.0))
@@ -598,8 +734,18 @@ def main() -> None:
             "num_rooms": result.total_rooms,
             "num_corridors": result.total_corridors,
             "bounding_box_fraction": result.bounding_box_area_fraction,
-            "largest_component_fraction": result.largest_component_fraction,
             "graph_diameter": result.graph_diameter,
+            "graph_radius": result.graph_radius,
+            "articulation_points": result.articulation_points,
+            "bridge_count": result.bridge_count,
+            "average_shortest_path_length": result.average_shortest_path_length,
+            "dead_end_count": result.dead_end_count,
+            "cyclomatic_complexity": result.cyclomatic_complexity,
+            "graph_density": result.graph_density,
+            "degree_p20": result.degree_p20,
+            "degree_p50": result.degree_p50,
+            "degree_p80": result.degree_p80,
+            "louvain_modularity": result.louvain_modularity,
             "num_cycles": result.cycle_count,
             "diversity_score": result.diversity_score,
         }
@@ -636,6 +782,8 @@ def main() -> None:
             name="Generation time",
             values=durations,
             value_formatter=lambda value: f"{value:.4f}s",
+            success_threshold=DEFAULT_GENERATION_TIME_THRESHOLD,
+            success_label=f">= {DEFAULT_GENERATION_TIME_THRESHOLD:.2f}s (slow runs)",
         ),
         MetricDefinition(
             key="rooms_placed",
@@ -653,6 +801,8 @@ def main() -> None:
             name="Corridors placed",
             values=corridors_values,
             value_formatter=lambda value: f"{value:.0f}",
+            success_threshold=DEFAULT_CORRIDOR_COUNT_THRESHOLD,
+            success_label=f">= {DEFAULT_CORRIDOR_COUNT_THRESHOLD:.0f}",
         ),
         MetricDefinition(
             key="diversity",
@@ -673,16 +823,100 @@ def main() -> None:
             ),
         ),
         MetricDefinition(
-            key="largest_component_fraction",
-            name="Largest component coverage",
-            values=largest_component_fractions,
-            value_formatter=lambda value: f"{value:.1%}",
-        ),
-        MetricDefinition(
             key="graph_diameter",
             name="Graph diameter",
             values=graph_diameters,
             value_formatter=lambda value: f"{value:.0f}",
+            success_threshold=DEFAULT_GRAPH_DIAMETER_THRESHOLD,
+            success_label=f">= {DEFAULT_GRAPH_DIAMETER_THRESHOLD:.0f}",
+        ),
+        MetricDefinition(
+            key="graph_radius",
+            name="Graph radius",
+            values=graph_radii,
+            value_formatter=lambda value: f"{value:.0f}",
+            success_threshold=DEFAULT_GRAPH_RADIUS_THRESHOLD,
+            success_label=f">= {DEFAULT_GRAPH_RADIUS_THRESHOLD:.0f}",
+        ),
+        MetricDefinition(
+            key="articulation_points",
+            name="Articulation points",
+            values=articulation_counts,
+            value_formatter=lambda value: f"{value:.0f}",
+            success_threshold=DEFAULT_ARTICULATION_POINT_THRESHOLD,
+            success_label=f">= {DEFAULT_ARTICULATION_POINT_THRESHOLD:.0f}",
+        ),
+        MetricDefinition(
+            key="bridges",
+            name="Bridges",
+            values=bridge_counts,
+            value_formatter=lambda value: f"{value:.0f}",
+            success_threshold=DEFAULT_BRIDGE_COUNT_THRESHOLD,
+            success_label=f">= {DEFAULT_BRIDGE_COUNT_THRESHOLD:.0f}",
+        ),
+        MetricDefinition(
+            key="average_shortest_path_length",
+            name="Average shortest path length",
+            values=average_shortest_paths,
+            value_formatter=lambda value: f"{value:.2f}",
+            success_threshold=DEFAULT_AVERAGE_SHORTEST_PATH_THRESHOLD,
+            success_label=f">= {DEFAULT_AVERAGE_SHORTEST_PATH_THRESHOLD:.2f}",
+        ),
+        MetricDefinition(
+            key="dead_end_count",
+            name="Dead ends",
+            values=dead_end_counts,
+            value_formatter=lambda value: f"{value:.0f}",
+            success_threshold=DEFAULT_DEAD_END_THRESHOLD,
+            success_label=f">= {DEFAULT_DEAD_END_THRESHOLD:.0f}",
+        ),
+        MetricDefinition(
+            key="cyclomatic_complexity",
+            name="Cyclomatic complexity",
+            values=cyclomatic_complexities,
+            value_formatter=lambda value: f"{value:.2f}",
+            success_threshold=DEFAULT_CYCLOMATIC_COMPLEXITY_THRESHOLD,
+            success_label=f">= {DEFAULT_CYCLOMATIC_COMPLEXITY_THRESHOLD:.2f}",
+        ),
+        MetricDefinition(
+            key="graph_density",
+            name="Graph density",
+            values=graph_densities,
+            value_formatter=lambda value: f"{value:.3f}",
+            success_threshold=DEFAULT_GRAPH_DENSITY_THRESHOLD,
+            success_label=f">= {DEFAULT_GRAPH_DENSITY_THRESHOLD:.3f}",
+        ),
+        MetricDefinition(
+            key="degree_p20",
+            name="Degree p20",
+            values=degree_p20_values,
+            value_formatter=lambda value: f"{value:.1f}",
+            success_threshold=DEFAULT_DEGREE_P20_THRESHOLD,
+            success_label=f">= {DEFAULT_DEGREE_P20_THRESHOLD:.1f}",
+        ),
+        MetricDefinition(
+            key="degree_p50",
+            name="Degree p50",
+            values=degree_p50_values,
+            value_formatter=lambda value: f"{value:.1f}",
+            success_threshold=DEFAULT_DEGREE_P50_THRESHOLD,
+            success_label=f">= {DEFAULT_DEGREE_P50_THRESHOLD:.1f}",
+        ),
+        MetricDefinition(
+            key="degree_p80",
+            name="Degree p80",
+            values=degree_p80_values,
+            value_formatter=lambda value: f"{value:.1f}",
+            success_threshold=DEFAULT_DEGREE_P80_THRESHOLD,
+            success_label=f">= {DEFAULT_DEGREE_P80_THRESHOLD:.1f}",
+        ),
+        MetricDefinition(
+            key="louvain_modularity",
+            name="Louvain modularity",
+            values=louvain_modularities,
+            value_formatter=lambda value: f"{value:.3f}",
+            success_threshold=DEFAULT_LOUVAIN_MODULARITY_THRESHOLD,
+            success_label=f">= {DEFAULT_LOUVAIN_MODULARITY_THRESHOLD:.2f}",
         ),
         MetricDefinition(
             key="cycle_count",
