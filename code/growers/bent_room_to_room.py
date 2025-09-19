@@ -363,9 +363,6 @@ def run_bent_room_to_room_grower(context: GrowerContext, stop_after_first: bool)
     if not context.get_room_templates(RoomKind.BEND):
         print("Bent-room-to-room grower: skipped - no bend room templates available.")
         return 0
-    if context.layout.component_manager.has_single_component():
-        print("Bent-room-to-room grower: skipped - already fully connected.")
-        return 0
 
     grower = DungeonGrower(
         name="bent_room_to_room",

@@ -173,6 +173,7 @@ class InitialTreeHelper:
         return GrowerStepResult(applied=True, stop=stop)
 
     def finalize(self) -> int:
+        print(f"Initial tree grower: created {self._rooms_created} rooms for the initial tree.")
         return self._rooms_created
 
     # ------------------------------------------------------------------
