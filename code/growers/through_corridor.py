@@ -62,7 +62,7 @@ class ThroughCorridorCandidateFinder(
         return tuple(slices)
 
     def find_candidates(self, context: GrowerContext) -> Iterable[ThroughCorridorCandidate]:
-        max_length = context.config.max_desired_corridor_length
+        max_length = context.config.corridor_length_for_split
         candidates: List[ThroughCorridorCandidate] = []
         for idx, corridor in enumerate(context.layout.corridors):
             geometry = corridor.geometry

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from dungeon_config import DungeonConfig
+from dungeon_config import DungeonConfig, CorridorLengthDistribution
 from dungeon_generator import DungeonGenerator
 from room_templates import prototype_room_templates
 
@@ -20,10 +20,15 @@ def main() -> None:
             num_rooms_to_place=50,
             min_room_separation=1,
             min_intra_component_connection_distance=10,
-            max_desired_corridor_length=8,
+            corridor_length_for_split=8,
             max_parallel_corridor_perpendicular_distance=8,
             max_parallel_corridor_overlap=5,
             min_rooms_required=10,
+            initial_corridor_length=CorridorLengthDistribution(
+                min_length=5,
+                max_length=100,
+                median_length=30,
+            ),
             random_seed=None,
         )
 
@@ -38,10 +43,15 @@ def main() -> None:
             num_rooms_to_place=15,
             min_room_separation=1,
             min_intra_component_connection_distance=10,
-            max_desired_corridor_length=8,
+            corridor_length_for_split=8,
             max_parallel_corridor_perpendicular_distance=8,
             max_parallel_corridor_overlap=5,
             min_rooms_required=10,
+            initial_corridor_length=CorridorLengthDistribution(
+                min_length=5,
+                max_length=50,
+                median_length=15,
+            ),
             random_seed=None,
         )
 

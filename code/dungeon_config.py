@@ -44,10 +44,6 @@ class CorridorLengthDistribution:
         clamped = max(self.min_length, min(self.max_length, value))
         return int(round(clamped))
 
-    @classmethod
-    def default(cls) -> "CorridorLengthDistribution":
-        return cls(min_length=4, max_length=12, median_length=6)
-
 
 @dataclass
 class DungeonConfig:
@@ -66,13 +62,15 @@ class DungeonConfig:
     # We don't place new links if they connect things in the same component that are closer than this number in the dungeon graph.
     min_intra_component_connection_distance: int
     # Corridors longer than this number can be split by through-corridor grower.
-    max_desired_corridor_length: int
+    corridor_length_for_split: int
     # Ban long parallel corridors if they're closer than this along perpendicular axis.
     max_parallel_corridor_perpendicular_distance: int
     # Ban long parallel corridors if their overlap length is over this.
     max_parallel_corridor_overlap: int
     # Reject final dungeon if number of rooms in largest connected component is less than this.
     min_rooms_required: int
+    # Distribution of corridor lengths placed in step 1.
+    initial_corridor_length: CorridorLengthDistribution
 
     macro_grid_size: int = 4
     random_seed: int | None = None
@@ -81,9 +79,7 @@ class DungeonConfig:
     max_consecutive_limit_failures: int = 5
     bent_room_to_corridor_max_room_distance: int = 8
     bent_room_to_corridor_max_branch_distance: int | None = None
-    initial_corridor_length: CorridorLengthDistribution | None = None
     _door_macro_alignment_offsets: Mapping[Direction, tuple[float, float]] = field(init=False, repr=False)
-    _initial_corridor_length: CorridorLengthDistribution = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.width <= 0 or self.height <= 0:
@@ -124,13 +120,6 @@ class DungeonConfig:
                 "DungeonConfig bent_room_to_corridor_max_branch_distance must be positive or None"
             )
 
-        initial_corridor_length = (
-            self.initial_corridor_length
-            if self.initial_corridor_length is not None
-            else CorridorLengthDistribution.default()
-        )
-        object.__setattr__(self, "initial_corridor_length", initial_corridor_length)
-
         self.room_templates = tuple(self.room_templates)
         if not self.room_templates:
             raise ValueError("DungeonConfig requires at least one room template")
@@ -152,12 +141,7 @@ class DungeonConfig:
             raise ValueError("Direct link probabilities must sum to a positive value")
 
         self._door_macro_alignment_offsets = door_macro_alignment_offsets(self.macro_grid_size)
-        self._initial_corridor_length = initial_corridor_length
 
     @property
     def door_macro_alignment_offsets(self) -> Mapping[Direction, tuple[float, float]]:
         return self._door_macro_alignment_offsets
-
-    @property
-    def initial_corridor_length_distribution(self) -> CorridorLengthDistribution:
-        return self._initial_corridor_length

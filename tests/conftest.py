@@ -9,7 +9,7 @@ CODE_DIR = ROOT_DIR / "code"
 if str(CODE_DIR) not in sys.path:
     sys.path.insert(0, str(CODE_DIR))
 
-from dungeon_config import DungeonConfig
+from dungeon_config import DungeonConfig, CorridorLengthDistribution
 from dungeon_layout import DungeonLayout
 from geometry import Direction
 from grower_context import GrowerContext
@@ -46,13 +46,18 @@ def dungeon_config(standalone_template: RoomTemplate) -> DungeonConfig:
         num_rooms_to_place=5,
         min_room_separation=2,
         min_intra_component_connection_distance=3,
-        max_desired_corridor_length=20,
+        corridor_length_for_split=20,
         max_parallel_corridor_perpendicular_distance=2,
         max_parallel_corridor_overlap=4,
         min_rooms_required=1,
         macro_grid_size=4,
         max_connected_placement_attempts=20,
         max_consecutive_limit_failures=3,
+        initial_corridor_length=CorridorLengthDistribution(
+            min_length=5,
+            max_length=30,
+            median_length=10,
+        ),
     )
 
 
@@ -83,13 +88,18 @@ def make_context(
             num_rooms_to_place=10,
             min_room_separation=1,
             min_intra_component_connection_distance=3,
-            max_desired_corridor_length=20,
+            corridor_length_for_split=20,
             max_parallel_corridor_perpendicular_distance=10,
             max_parallel_corridor_overlap=8,
             min_rooms_required=1,
             macro_grid_size=4,
             max_connected_placement_attempts=20,
             max_consecutive_limit_failures=5,
+            initial_corridor_length=CorridorLengthDistribution(
+                min_length=5,
+                max_length=30,
+                median_length=10,
+            ),
         )
         layout = DungeonLayout(config)
         room_templates_by_kind: dict[RoomKind, list[RoomTemplate]] = {kind: [] for kind in RoomKind}

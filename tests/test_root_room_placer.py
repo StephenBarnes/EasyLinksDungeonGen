@@ -89,7 +89,7 @@ def test_place_rooms_creates_single_component(root_room_placer):
 
 
 def test_corridor_length_distribution_within_bounds(root_room_placer):
-    dist = root_room_placer.config.initial_corridor_length_distribution
+    dist = root_room_placer.config.initial_corridor_length
     for _ in range(20):
         value = dist.sample()
         assert dist.min_length <= value <= dist.max_length
@@ -107,7 +107,7 @@ def test_place_rooms_spawns_corridor_when_possible(standalone_template):
             num_rooms_to_place=6,
             min_room_separation=1,
             min_intra_component_connection_distance=3,
-            max_desired_corridor_length=20,
+            corridor_length_for_split=20,
             max_parallel_corridor_perpendicular_distance=10,
             max_parallel_corridor_overlap=8,
             min_rooms_required=1,

@@ -52,7 +52,7 @@ class RootRoomPlacer:
             room_templates=self._all_templates,
             room_templates_by_kind=self.room_templates_by_kind,
         )
-        self._corridor_length_distribution = self.config.initial_corridor_length_distribution
+        self._corridor_length_distribution = self.config.initial_corridor_length
 
     def place_rooms(self) -> None:
         """Build a single connected component by growing corridors from unused ports."""
