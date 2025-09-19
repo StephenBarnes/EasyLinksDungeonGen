@@ -16,7 +16,7 @@ import random
 import statistics
 import subprocess
 import time
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Sequence
 
 import networkx as nx
 from networkx.algorithms import community as nx_comm
@@ -103,6 +103,7 @@ class GenerationRunResult:
     louvain_modularity: float
     template_counts: Counter[str]
     grower_metrics: Dict[str, Dict[str, float | int]]
+    config_snapshot: Dict[str, Any]
 
 
 def gini_coefficient(counts: List[int]) -> float:
@@ -183,6 +184,51 @@ def compute_basic_stats(values: List[float]) -> Dict[str, float]:
         "min": min(values),
         "max": max(values),
         "stdev": statistics.stdev(values) if len(values) > 1 else float("nan"),
+    }
+
+
+def serialize_corridor_length_distribution(
+    distribution: CorridorLengthDistribution,
+) -> Dict[str, float | int | None]:
+    return {
+        "min_length": int(distribution.min_length),
+        "max_length": int(distribution.max_length),
+        "median_length": float(distribution.median_length)
+        if distribution.median_length is not None
+        else None,
+    }
+
+
+def serialize_room_templates(templates: Sequence) -> List[str]:
+    return [getattr(template, "name", str(template)) for template in templates]
+
+
+def serialize_dungeon_config(config: DungeonConfig) -> Dict[str, Any]:
+    return {
+        "width": config.width,
+        "height": config.height,
+        "room_templates": serialize_room_templates(config.room_templates),
+        "direct_link_counts_probs": dict(
+            sorted(config.direct_link_counts_probs.items(), key=lambda item: item[0])
+        ),
+        "num_rooms_to_place": config.num_rooms_to_place,
+        "min_room_separation": config.min_room_separation,
+        "min_intra_component_connection_distance": config.min_intra_component_connection_distance,
+        "corridor_length_for_split": config.corridor_length_for_split,
+        "max_parallel_corridor_perpendicular_distance": config.max_parallel_corridor_perpendicular_distance,
+        "max_parallel_corridor_overlap": config.max_parallel_corridor_overlap,
+        "min_rooms_required": config.min_rooms_required,
+        "initial_corridor_length": serialize_corridor_length_distribution(
+            config.initial_corridor_length
+        ),
+        "macro_grid_size": config.macro_grid_size,
+        "random_seed": config.random_seed,
+        "collect_metrics": config.collect_metrics,
+        "max_connected_placement_attempts": config.max_connected_placement_attempts,
+        "max_consecutive_limit_failures": config.max_consecutive_limit_failures,
+        "bent_room_to_corridor_max_room_distance": config.bent_room_to_corridor_max_room_distance,
+        "bent_room_to_corridor_max_branch_distance": config.bent_room_to_corridor_max_branch_distance,
+        "first_root_center_fraction": config.first_root_center_fraction,
     }
 
 
@@ -350,6 +396,7 @@ def build_room_graph(layout) -> nx.Graph:
 def run_single_generation(seed: int, room_completion_ratio: float) -> GenerationRunResult:
     """Run one dungeon generation with the provided seed and collect metrics."""
     config = build_config(seed)
+    config_snapshot = serialize_dungeon_config(config)
 
     random.seed(seed)
 
@@ -479,6 +526,7 @@ def run_single_generation(seed: int, room_completion_ratio: float) -> Generation
         louvain_modularity=louvain_modularity,
         template_counts=template_counts,
         grower_metrics=grower_metrics,
+        config_snapshot=config_snapshot,
     )
 
 
@@ -1011,6 +1059,7 @@ def main() -> None:
             "cycle_count_threshold": args.cycle_count_threshold,
             "cycle_length_threshold": args.cycle_length_threshold,
         },
+        "dungeon_config": results[0].config_snapshot,
     }
 
     grower_summary_json = {
