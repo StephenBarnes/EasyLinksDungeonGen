@@ -254,7 +254,9 @@ class RootRoomPlacer:
         exit_candidate = self._grower_context.port_exit_axis_value(
             candidate_world_port, axis_index
         )
-        if abs(exit_candidate - exit_anchor) != corridor_length:
+        actual_length = abs(exit_candidate - exit_anchor)
+        min_expected = max(1, corridor_length // 2)
+        if actual_length < min_expected:
             return None
 
         for tile in geometry.tiles:

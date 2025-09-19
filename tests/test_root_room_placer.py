@@ -2,6 +2,8 @@ import random
 
 import pytest
 
+from dungeon_config import CorridorLengthDistribution, DungeonConfig
+from dungeon_layout import DungeonLayout
 from geometry import Direction, Rotation
 from models import RoomKind
 from root_room_placer import RootRoomPlacer
@@ -79,8 +81,11 @@ def test_place_rooms_creates_single_component(root_room_placer):
 
     component_sizes = root_room_placer.layout.get_component_sizes()
     assert len(component_sizes) == 1
-    assert sum(component_sizes.values()) == len(root_room_placer.layout.placed_rooms)
-    assert len(root_room_placer.layout.placed_rooms) >= 1
+    component_id = next(iter(component_sizes))
+    layout = root_room_placer.layout
+    assert len(layout.placed_rooms) >= 1
+    assert all(room.component_id == component_id for room in layout.placed_rooms)
+    assert all(corridor.component_id == component_id for corridor in layout.corridors)
 
 
 def test_corridor_length_distribution_within_bounds(root_room_placer):
@@ -88,3 +93,44 @@ def test_corridor_length_distribution_within_bounds(root_room_placer):
     for _ in range(20):
         value = dist.sample()
         assert dist.min_length <= value <= dist.max_length
+
+
+def test_place_rooms_spawns_corridor_when_possible(standalone_template):
+    state = random.getstate()
+    try:
+        random.seed(4242)
+        config = DungeonConfig(
+            width=60,
+            height=60,
+            room_templates=[standalone_template],
+            direct_link_counts_probs={0: 1.0},
+            num_rooms_to_place=6,
+            min_room_separation=1,
+            min_intra_component_connection_distance=3,
+            max_desired_corridor_length=20,
+            max_parallel_corridor_perpendicular_distance=10,
+            max_parallel_corridor_overlap=8,
+            min_rooms_required=1,
+            macro_grid_size=4,
+            max_connected_placement_attempts=40,
+            max_consecutive_limit_failures=5,
+            initial_corridor_length=CorridorLengthDistribution(
+                min_length=4,
+                max_length=4,
+                median_length=4,
+            ),
+        )
+        layout = DungeonLayout(config)
+        placer = RootRoomPlacer(
+            config,
+            layout,
+            {RoomKind.STANDALONE: [standalone_template]},
+        )
+
+        placer.place_rooms()
+
+        assert len(layout.corridors) >= 1
+        assert len(layout.room_corridor_links) >= 2
+        assert len(layout.placed_rooms) >= 2
+    finally:
+        random.setstate(state)
