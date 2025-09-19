@@ -66,7 +66,7 @@ DEFAULT_DEGREE_P50_THRESHOLD = 3.0
 DEFAULT_DEGREE_P80_THRESHOLD = 4.0
 DEFAULT_LOUVAIN_MODULARITY_THRESHOLD = 0.30
 
-PERCENTILES = [1.0, 5.0] + [float(value) for value in range(10, 100, 5)] + [99.0]
+PERCENTILES = [10, 30, 50, 70, 90]
 
 
 def build_config(seed: int) -> DungeonConfig:
